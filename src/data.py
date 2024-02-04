@@ -2,6 +2,7 @@ from pathlib import Path
 import polars as pl
 import requests
 from tqdm import tqdm
+from datetime import datetime 
 
 
 from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN, BASE_URL
@@ -143,3 +144,91 @@ def load_raw_data(year:int, months: list[int] | None = None) -> None:
 
 ##################################################################################### Data Transformation
 
+def read_file(folder:Path, year:int, month:int) -> pl.DataFrame:
+    """
+    Reads a parquet file for a given year and month from a specified folder.
+
+    This function constructs the file path using the provided folder, year, and month. It then reads the parquet file
+    located at that path into a Polars DataFrame and returns it.
+
+    Parameters:
+    - folder (Path): The folder where the parquet file is located.
+    - year (int): The year part of the file to be read.
+    - month (int): The month part of the file to be read.
+
+    Returns:
+    - pl.DataFrame: The Polars DataFrame containing the data from the parquet file.
+    """
+    return pl.read_parquet(folder / FILE_PATTERN.format(year=year, month=month))
+
+def generate_hourly_datetimes_with_ranges(year: int, month: int) -> pl.DataFrame:
+    """
+    Generates a Polars DataFrame with a single column containing datetimes for every hour in the specified month
+    using the pl.datetime_ranges function.
+
+    Parameters:
+    - year (int): The year of the month for which to generate hourly datetimes.
+    - month (int): The month for which to generate hourly datetimes.
+
+    Returns:
+    - pl.DataFrame: A DataFrame with a single column named 'datetime', containing hourly datetimes for the specified month.
+    """
+    # Calculate the start datetime of the month
+    start_date = datetime(year, month, 1)
+    # Handle December separately to avoid month overflow
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1)
+    else:
+        end_date = datetime(year, month + 1, 1)
+    
+    # Create a DataFrame from the datetime range
+    df = pl.DataFrame({
+        "pickup_datetime_hour": pl.datetime_range(
+            start=start_date, 
+            end=end_date, 
+            interval="1h", 
+            eager=True, 
+            time_unit="ns",
+            closed="left")
+    })
+    
+    return df
+
+def aggregate_pickups_into_hourly_data(df: pl.DataFrame, year: int, month: int) -> pl.DataFrame:
+    """
+    Aggregates the number of pickups for each location and hour in the provided DataFrame.
+
+    This function groups the DataFrame by the pickup location ID and the pickup hour, and then counts the number of
+    pickups for each group. To ensure that the resulting DataFrame contains all hours in the month, the function first
+    generates a DataFrame containing hourly datetimes for the specified month and year, and then performs a left join
+    with the aggregated pickup data.
+
+    Parameters:
+    - year (int): The year of the month for which to aggregate the pickup data.
+    - month (int): The month for which to aggregate the pickup data.
+    - df (pl.DataFrame): The DataFrame containing the pickup data to be aggregated.
+
+    Returns:
+    - pl.DataFrame: The DataFrame containing the aggregated pickup data.
+    """
+    # Truncate the pickup datetime to the nearest hour and group by the pickup location ID
+    hourly_pickups = (
+        df
+        .group_by([
+            pl.col("pickup_datetime").dt.truncate("1d").alias("pickup_datetime_hour"),
+            pl.col("pickup_location_id")
+        ])
+        .agg(
+            pl.col("pickup_location_id").count().alias("num_pickups")
+        )
+    )
+    
+    hourly_df = generate_hourly_datetimes_with_ranges(year, month)
+    
+    
+    return ( hourly_df
+            .join(hourly_pickups, on="pickup_datetime_hour", how="left")
+            .with_columns(
+                pl.col("num_pickups").fill_null(pl.lit(0))
+            )
+    )
