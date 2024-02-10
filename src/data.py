@@ -6,13 +6,12 @@ from datetime import datetime
 import duckdb
 
 
-from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN, BASE_URL, TRANSFORMED_DATA_DIR
+from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN, BASE_URL
 from src.logger import get_logger
 from src.dwh import generate_connection, upsert_file_into_db
 
 logger = get_logger(__name__)
 
-##################################################################################### Data Engineering
 
 def download_file_from_source_into_raw_folder(year:int, month:int) -> Path:
     """
@@ -199,6 +198,17 @@ def aggregate_pickup_into_timeseries_data(df: pl.DataFrame, year: int, month: in
     )
     
 def generate_surrogate_key(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Generates a surrogate key for each record in the DataFrame by concatenating the pickup_datetime_hour and pickup_location_id.
+
+    This function takes a DataFrame and adds a new column named 'key' which is a string concatenation of 'pickup_datetime_hour' and 'pickup_location_id', separated by a hyphen. It also ensures that 'pickup_location_id' and 'num_pickups' are cast to Int16 for consistency.
+
+    Parameters:
+    - df (pl.DataFrame): The DataFrame to process.
+
+    Returns:
+    - pl.DataFrame: The original DataFrame with an additional 'key' column and casted 'pickup_location_id' and 'num_pickups' columns.
+    """
     return df.select([
         pl.concat_str(pl.col("pickup_datetime_hour"), pl.lit("-"), pl.col("pickup_location_id")).alias("key"),
         pl.col("pickup_datetime_hour"),
@@ -207,25 +217,22 @@ def generate_surrogate_key(df: pl.DataFrame) -> pl.DataFrame:
     ])
 
     
-    file = str(PROCESSED_DATA_DIR / Path(FILE_PATTERN.format(year=year, month=month)))
-    
-    statement = """
-        CREATE OR REPLACE TEMP TABLE stg_pickup_hourly AS
-        SELECT * 
-        FROM read_parquet('{file}');
-        
-        INSERT INTO dwh.main.pickup_hourly  
-        SELECT * FROM stg_pickup_hourly
-        ON CONFLICT(key)
-        DO UPDATE SET num_pickup = EXCLUDED.num_pickup;
-        
-        DROP TABLE stg_pickup_hourly;
-    """.format(file=file)
-    
-    db.execute(statement)
-    logger.info(f"Upserted {file} into dwh.main.pickup_hourly")
     
 def file_etl(year:int, month:int) -> None:
+    """
+    Executes the ETL process for a single file corresponding to a given year and month.
+
+    This function encompasses the entire ETL (Extract, Transform, Load) process for taxi trip data of a specific year and month. 
+    It downloads the raw data file, validates and cleans it, aggregates it into timeseries data, generates a surrogate key, 
+    writes the processed data to a parquet file, upserts the data into a database, and finally cleans up the intermediate files.
+
+    Parameters:
+    - year (int): The year of the data file to process.
+    - month (int): The month of the data file to process.
+
+    Returns:
+    None. The function performs operations that result in writing to disk and database but does not return any value.
+    """
     
     # Download the file
     raw_file = download_file_from_source_into_raw_folder(year, month)
@@ -246,7 +253,6 @@ def file_etl(year:int, month:int) -> None:
     upsert_file_into_db(con, year, month)
     con.close()
     delete_file(processed_file)
-
     
 def batch_etl(year:int, months: list[int] | None = None) -> None:
     """
