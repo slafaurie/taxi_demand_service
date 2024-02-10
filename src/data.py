@@ -3,14 +3,16 @@ import polars as pl
 import requests
 from tqdm import tqdm
 from datetime import datetime 
+import duckdb
 
 
 from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN, BASE_URL, TRANSFORMED_DATA_DIR
 from src.logger import get_logger
+from src.dwh import generate_connection, upsert_file_into_db
 
-logger = get_logger()
+logger = get_logger(__name__)
 
-##################################################################################### Data Loading and Validation 
+##################################################################################### Data Engineering
 
 def download_file_from_source_into_raw_folder(year:int, month:int) -> Path:
     """
@@ -91,7 +93,7 @@ def validate_file(file:Path, year:int, month:int) -> pl.DataFrame:
 
     return clean_data
 
-def delete_raw_data_file(file: Path) -> None:
+def delete_file(file: Path) -> None:
     """
     Deletes a file in the data/raw directory after it have been validated and processed.
 
@@ -106,43 +108,6 @@ def delete_raw_data_file(file: Path) -> None:
         logger.info(f"Deleted file: %s", file)
     except Exception as e:
         logger.error(f"Error deleting file %s: %s", file, e)
-        
-def load_raw_data(year:int, months: list[int] | None = None) -> None:
-    """
-    Loads raw taxi trip data for a specified year and optional list of months, validates it, and saves the validated data.
-
-    This function downloads raw taxi trip data for the specified year and months. If no months are provided, it defaults to all months in the year.
-    After downloading, it validates the data by checking if the records fall within the specified year and month(s) and then saves the validated data
-    into a processed data directory in parquet format.
-
-    Parameters:
-    - year (int): The year for which to download and validate the data.
-    - months (Optional[list[int]]): An optional list of integers representing the months for which to download and validate the data.
-      If None, data for all months in the specified year will be processed.
-
-    Returns:
-    None. The function saves the validated data into a processed data directory without returning any value.
-    """
-    
-    logger.info("Downloading data for year %s", year)
-    
-    if months is None: 
-        months = range(1, 13)
-    if isinstance(months, int):
-        months = [months]
- 
-    for month in tqdm(months):
-        try:
-            file = download_file_from_source_into_raw_folder(year, month)
-            validate_file(file, year, month).write_parquet(PROCESSED_DATA_DIR / FILE_PATTERN.format(year=year, month=month))
-            delete_raw_data_file(file)
-        except requests.exceptions.HTTPError as e:
-            logger.error("Error downloading data for year %s and month %s: %s", year, month, e)
-            continue
-    logger.info("Data for year %s has been downloaded and validated", year)
-    
-
-##################################################################################### Data Transformation
 
 def read_file(folder:Path, year:int, month:int) -> pl.DataFrame:
     """
@@ -194,14 +159,12 @@ def generate_hourly_datetimes_with_ranges(year: int, month: int) -> pl.DataFrame
     
     return df
 
-def aggregate_pickups_into_hourly_data(df: pl.DataFrame, year: int, month: int) -> pl.DataFrame:
+def aggregate_pickup_into_timeseries_data(df: pl.DataFrame, year: int, month: int) -> pl.DataFrame:
     """
-    Aggregates the number of pickups for each location and hour in the provided DataFrame.
-
-    This function groups the DataFrame by the pickup location ID and the pickup hour, and then counts the number of
-    pickups for each group. To ensure that the resulting DataFrame contains all hours in the month, the function first
-    generates a DataFrame containing hourly datetimes for the specified month and year, and then performs a left join
-    with the aggregated pickup data.
+    Aggregate the pickup data into hourly timeseries data for the specified year and month. Timeseries
+    must contain all hours in the month, and the number of pickups for each pickup location ID at each hour.
+    
+    In case there are no pickups for a given hour and pickup location ID, the number of pickups should be 0.
 
     Parameters:
     - year (int): The year of the month for which to aggregate the pickup data.
@@ -226,51 +189,95 @@ def aggregate_pickups_into_hourly_data(df: pl.DataFrame, year: int, month: int) 
     hourly_df = generate_hourly_datetimes_with_ranges(year, month)
     
     
-    return ( hourly_df
-            .join(hourly_pickups, on="pickup_datetime_hour", how="left")
+    return ( 
+            hourly_df
+            .join(hourly_pickups.select(pl.col("pickup_location_id").unique()), how="cross")
+            .join(hourly_pickups, on=["pickup_datetime_hour", "pickup_location_id"], how="left")
             .with_columns(
                 pl.col("num_pickups").fill_null(pl.lit(0))
             )
     )
     
-def get_time_lags(df: pl.DataFrame, n_lags: int) -> pl.DataFrame:
-    """
-    Generates time-lagged features for the number of pickups.
+def generate_surrogate_key(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select([
+        pl.concat_str(pl.col("pickup_datetime_hour"), pl.lit("-"), pl.col("pickup_location_id")).alias("key"),
+        pl.col("pickup_datetime_hour"),
+        pl.col("pickup_location_id").cast(pl.Int16),
+        pl.col("num_pickups").cast(pl.Int16)
+    ])
 
-    This function takes a DataFrame and an integer n_lags to generate n_lags new columns in the DataFrame. Each new column represents the number of pickups n hours ago, where n ranges from 1 to n_lags. The function sorts the DataFrame by 'pickup_location_id' and 'pickup_datetime_hour' before shifting to ensure that the lagged values are correctly aligned with the corresponding times and locations.
-
-    Parameters:
-    - df (pl.DataFrame): The DataFrame containing the pickup data.
-    - n_lags (int): The number of lagged time periods to generate.
-
-    Returns:
-    - pl.DataFrame: The original DataFrame with n_lags new columns added, each representing the number of pickups n hours ago.
-    """
-    return (
-        df
-        .with_columns([
-            pl.col("num_pickups").sort_by(["pickup_location_id", "pickup_datetime_hour"]).shift(i).over("pickup_location_id").alias(f"num_pickups_{i}h_ago") for i in range(1, n_lags+1)
-        ])
-        .drop_nulls()
+    
+    file = str(PROCESSED_DATA_DIR / Path(FILE_PATTERN.format(year=year, month=month)))
+    
+    statement = """
+        CREATE OR REPLACE TEMP TABLE stg_pickup_hourly AS
+        SELECT * 
+        FROM read_parquet('{file}');
+        
+        INSERT INTO dwh.main.pickup_hourly  
+        SELECT * FROM stg_pickup_hourly
+        ON CONFLICT(key)
+        DO UPDATE SET num_pickup = EXCLUDED.num_pickup;
+        
+        DROP TABLE stg_pickup_hourly;
+    """.format(file=file)
+    
+    db.execute(statement)
+    logger.info(f"Upserted {file} into dwh.main.pickup_hourly")
+    
+def file_etl(year:int, month:int) -> None:
+    
+    # Download the file
+    raw_file = download_file_from_source_into_raw_folder(year, month)
+    processed_file = PROCESSED_DATA_DIR / FILE_PATTERN.format(year=year, month=month)
+    raw_df = validate_file(raw_file, year, month)
+    delete_file(raw_file)
+    
+    # clean and load the file
+    (
+        raw_df
+        .pipe(aggregate_pickup_into_timeseries_data, year, month)
+        .pipe(generate_surrogate_key)
+        .write_parquet(processed_file)
     )
     
-def generate_ts_features_for_file(year: int, month: int, n_lags: int) -> pl.DataFrame:
-    """
-    Generates time-lagged features for the number of pickups in a given month.
+    # upsert the file into the database
+    con = generate_connection()
+    upsert_file_into_db(con, year, month)
+    con.close()
+    delete_file(processed_file)
 
-    This function reads the pickup data for the specified year and month, aggregates it into hourly data, and then generates time-lagged features using the get_time_lags function.
+    
+def batch_etl(year:int, months: list[int] | None = None) -> None:
+    """
+    Loads raw taxi trip data for a specified year and optional list of months, validates it, and saves the validated data.
+
+    This function downloads raw taxi trip data for the specified year and months. If no months are provided, it defaults to all months in the year.
+    After downloading, it validates the data by checking if the records fall within the specified year and month(s) and then saves the validated data
+    into a processed data directory in parquet format.
 
     Parameters:
-    - year (int): The year of the month for which to generate time-lagged features.
-    - month (int): The month for which to generate time-lagged features.
-    - n_lags (int): The number of lagged time periods to generate.
+    - year (int): The year for which to download and validate the data.
+    - months (Optional[list[int]]): An optional list of integers representing the months for which to download and validate the data.
+      If None, data for all months in the specified year will be processed.
 
     Returns:
-    - pl.DataFrame: The DataFrame containing the time-lagged features.
+    None. The function saves the validated data into a processed data directory without returning any value.
     """
-    return (
-        read_file(PROCESSED_DATA_DIR, year, month)
-        .pipe(aggregate_pickups_into_hourly_data, year, month)
-        .pipe(get_time_lags, n_lags)
-        .write_parquet(TRANSFORMED_DATA_DIR / FILE_PATTERN.format(year=year, month=month))
-    )
+    
+    logger.info("Downloading data for year %s", year)
+    
+    if months is None: 
+        months = range(1, 13)
+    if isinstance(months, int):
+        months = [months]
+ 
+    for month in tqdm(months):
+        try:
+            file_etl(year, month)
+        except requests.exceptions.HTTPError as e:
+            logger.error("Error downloading data for year %s and month %s: %s", year, month, e)
+            continue
+    logger.info("Data for year %s has been downloaded and validated", year)
+    
+    
