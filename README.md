@@ -3,8 +3,14 @@
 ## Description
 
 
-## Tasks
-- Create setup script to install dependencies and project structure.
-- Create ETL tasks that loads the data from the source, [NYC Taxi and Limousine Commission](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page), do some data cleaning and save the data in the local database.
+## Epics
+1. Create setup script to install dependencies and project structure.
 
-- Create ETL task that loads the data from the local database, do some feature engineering and save the data in the local database.
+2. Create Pipeline that loads from source and writes to DWH
+
+3. Create Feature Pipeline that loads from DWH and creates features
+
+- Create Model Training Pipeline
+
+- Create Inference Pipeline
+

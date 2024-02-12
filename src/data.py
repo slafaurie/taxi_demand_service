@@ -1,9 +1,10 @@
 from pathlib import Path
+from datetime import datetime 
+from argparse import ArgumentParser
+
 import polars as pl
 import requests
 from tqdm import tqdm
-from datetime import datetime 
-import duckdb
 
 
 from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN, BASE_URL
@@ -215,8 +216,6 @@ def generate_surrogate_key(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("pickup_location_id").cast(pl.Int16),
         pl.col("num_pickups").cast(pl.Int16)
     ])
-
-    
     
 def file_etl(year:int, month:int) -> None:
     """
@@ -249,9 +248,9 @@ def file_etl(year:int, month:int) -> None:
     )
     
     # upsert the file into the database
-    con = generate_connection()
-    upsert_file_into_db(con, year, month)
-    con.close()
+    
+    with generate_connection() as con:
+        upsert_file_into_db(con, year, month)
     delete_file(processed_file)
     
 def batch_etl(year:int, months: list[int] | None = None) -> None:
@@ -285,5 +284,10 @@ def batch_etl(year:int, months: list[int] | None = None) -> None:
             logger.error("Error downloading data for year %s and month %s: %s", year, month, e)
             continue
     logger.info("Data for year %s has been downloaded and validated", year)
-    
-    
+
+if __name__ == "__main__":
+    parser = ArgumentParser(description="ETL process for NYC taxi trip data")
+    parser.add_argument("year", type=int, help="The year for which to download and validate the data")
+    parser.add_argument("--months", type=int, nargs="+", help="The months for which to download and validate the data")
+    args = parser.parse_args()
+    batch_etl(args.year, args.months)
