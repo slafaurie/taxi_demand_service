@@ -1,6 +1,5 @@
 from pathlib import Path
 from datetime import datetime
-from functools import wraps
 import duckdb
 from src.paths import DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN
 from src.logger import get_logger
@@ -20,6 +19,17 @@ def generate_connection() -> duckdb.DuckDBPyConnection:
         duckdb.DuckDBPyConnection: _description_
     """
     return duckdb.connect(database=str(DATABASE_URL))
+
+def run_database_operation(operation:str, *args, **kwargs):
+    if operation not in ["upsert_pickup_data", "fetch_pickup_data"]:
+        raise ValueError("Invalid operation name")
+    
+    with generate_connection() as db:
+        if operation == "upsert_pickup_data":
+            upsert_pickup_data(db, *args, **kwargs)
+        elif operation == "fetch_pickup_data":
+            df = fetch_pickup_data(db, *args, **kwargs)
+            return df
 
 def create_pickup_table(connection: duckdb.DuckDBPyConnection):
     """
@@ -49,7 +59,7 @@ def create_pickup_table(connection: duckdb.DuckDBPyConnection):
         )    
     logger.info("Created dwh.main.pickup_hourly table")
 
-def upsert_file_into_db(connection: duckdb.DuckDBPyConnection, year:int, month:int):
+def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:int):
     """
     Upserts data from a processed file into the dwh.main.pickup_hourly table.
 
@@ -121,12 +131,14 @@ def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime
         FROM 
             dwh.main.pickup_hourly
         WHERE 
-            pickup_datetime_hour BETWEEN '{from_date}' AND '{to_date}'
+            pickup_datetime_hour >= '{from_date}' 
+            AND pickup_datetime_hour < '{to_date}'
             AND IF(LENGTH({pickup_locations}) > 0, list_contains({pickup_locations}, pickup_location_id), TRUE)
         """.format(from_date=from_date, to_date=to_date, pickup_locations=pickup_locations) 
         
         df = connection.sql(query).pl()  
     return df
+
 
 
 if __name__ == "__main__":

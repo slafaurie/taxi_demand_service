@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN, BASE_URL
 from src.logger import get_logger
-from src.dwh import generate_connection, upsert_file_into_db
+from src.dwh import run_database_operation
 
 logger = get_logger(__name__)
 
@@ -178,7 +178,7 @@ def aggregate_pickup_into_timeseries_data(df: pl.DataFrame, year: int, month: in
     hourly_pickups = (
         df
         .group_by([
-            pl.col("pickup_datetime").dt.truncate("1d").alias("pickup_datetime_hour"),
+            pl.col("pickup_datetime").dt.truncate("1h").alias("pickup_datetime_hour"),
             pl.col("pickup_location_id")
         ])
         .agg(
@@ -248,9 +248,7 @@ def file_etl(year:int, month:int) -> None:
     )
     
     # upsert the file into the database
-    
-    with generate_connection() as con:
-        upsert_file_into_db(con, year, month)
+    run_database_operation("upsert_pickup_data", year, month)
     delete_file(processed_file)
     
 def batch_etl(year:int, months: list[int] | None = None) -> None:

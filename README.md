@@ -1,6 +1,7 @@
 # Taxi demand predictor service
 
 ## Description
+Build a service that predicts the demand of the next day.
 
 
 ## Epics
