@@ -40,6 +40,8 @@ def get_time_lags(df: pl.DataFrame, n_lags: list[int]) -> pl.DataFrame:
 
 
 class LagTransformer(BaseEstimator, TransformerMixin): 
+    """A scikit-learn transformer that generates time-lagged features for the number of pickups.
+    """
     def __init__(self, lags:list[int]):
         self.lags = lags
     
