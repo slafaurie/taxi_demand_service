@@ -3,12 +3,10 @@ import joblib
 import polars as pl 
 from sklearn.metrics import mean_absolute_error
 
-from src.config import LOCATIONS, TEST_DATA_FROM, TODAY_IS, TRAIN_DATA_FROM, TS_INDEX
+from src.config import  TEST_DATA_FROM, TODAY_IS, TRAIN_DATA_FROM, ModelConfig
 from src.paths import MODEL_DIR
 from src.pipeline import model
-
 from src.dwh import run_database_operation
-from src.plots import plot_ts
 
 
 def split_into_train_and_test(df:pl.DataFrame, cutoff_date:datetime = TEST_DATA_FROM):
@@ -18,7 +16,7 @@ def split_into_train_and_test(df:pl.DataFrame, cutoff_date:datetime = TEST_DATA_
     )
     
 
-def train_model(plot_predictions=False):
+def train_model():
     
     """Train the model and save it to disk
 
@@ -31,7 +29,7 @@ def train_model(plot_predictions=False):
         operation="fetch_pickup_data",
         from_date=TRAIN_DATA_FROM,
         to_date=TODAY_IS,
-        pickup_locations=LOCATIONS
+        pickup_locations=ModelConfig.LOCATIONS
     )
     train, test = split_into_train_and_test(df)
 
@@ -41,14 +39,11 @@ def train_model(plot_predictions=False):
     test_predictions = model.predict(test)
     
     # Evaluation
-    train_with_predicitions = train.join(predictions, on=TS_INDEX, how="inner")
-    test_with_predictions = test.join(test_predictions, on=TS_INDEX, how="inner")
+    train_with_predicitions = train.join(predictions, on=ModelConfig.TS_INDEX, how="inner")
+    test_with_predictions = test.join(test_predictions, on=ModelConfig.TS_INDEX, how="inner")
     train_mae = mean_absolute_error(train_with_predicitions["num_pickup"], train_with_predicitions["prediction"])
     test_mae = mean_absolute_error(test_with_predictions["num_pickup"], test_with_predictions["prediction"])
     
-    if plot_predictions:
-        plot_ts(train_with_predicitions, ["num_pickup", "prediction"])
-        plot_ts(test_with_predictions, ["num_pickup", "prediction"])
     print(f"Train MAE: {train_mae:.2f}, Test MAE: {test_mae:.2f}")
     
     # persist

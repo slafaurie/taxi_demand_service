@@ -2,13 +2,14 @@
 import joblib
 from datetime import datetime, timedelta
 import polars as pl
+import argparse
 
-from src.config import LAGS, LOCATIONS
+from src.config import ModelConfig
 from src.paths import MODEL_DIR
 from src.dwh import run_database_operation
 
 
-def make_prediction(reference_date:datetime, pickup_locations=LOCATIONS) -> pl.DataFrame:
+def make_prediction(reference_date:datetime, pickup_locations=ModelConfig.LOCATIONS) -> pl.DataFrame:
     """Make a prediction for the given reference date and pickup locations
 
     Args:
@@ -22,7 +23,7 @@ def make_prediction(reference_date:datetime, pickup_locations=LOCATIONS) -> pl.D
     # + 1 guarantees we have enough data for the prediction of the reference date
     df = run_database_operation(
         operation="fetch_pickup_data",
-        from_date= reference_date - timedelta(days=max(LAGS)+1), 
+        from_date= reference_date - timedelta(days=max(ModelConfig.LAGS)+1), 
         to_date=reference_date,
         pickup_locations=pickup_locations
     )
@@ -30,3 +31,13 @@ def make_prediction(reference_date:datetime, pickup_locations=LOCATIONS) -> pl.D
     model = joblib.load(MODEL_DIR / "baseline_model.pkl")
     
     return model.predict(df)
+
+
+ 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run inference for a given date")
+    parser.add_argument("--date", type=str, required=True, help="Reference date for prediction in YYYY-MM-DD format")
+    args = parser.parse_args()
+    reference_date = datetime.strptime(args.date, "%Y-%m-%d")
+    predictions = make_prediction(reference_date)
+    print(predictions)

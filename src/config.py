@@ -9,8 +9,8 @@ TRAIN_DATA_FROM =  datetime(2022,1,1)
 
 
 # model config
-LOCATIONS = [43]
-LAGS = [1,7,14,28]
-
-TARGET = "num_pickup"
-TS_INDEX = "pickup_datetime_hour"
+class ModelConfig:
+    LOCATIONS = [43]
+    LAGS = [1,7,14,28]
+    TARGET = "num_pickup"
+    TS_INDEX = "pickup_datetime_hour"

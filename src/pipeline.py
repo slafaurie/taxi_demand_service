@@ -4,7 +4,7 @@ from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin
 from sklearn.pipeline import Pipeline
 
 
-from src.config import TS_INDEX, LAGS
+from src.config import ModelConfig
 
 
 ##################################################################################### Feature Engineering
@@ -41,6 +41,8 @@ def get_time_lags(df: pl.DataFrame, n_lags: list[int]) -> pl.DataFrame:
 
 class LagTransformer(BaseEstimator, TransformerMixin): 
     """A scikit-learn transformer that generates time-lagged features for the number of pickups.
+    It's essentially a wrapper around the get_time_lags function to be able to use it on a Scikit-learn
+    pipeline. 
     """
     def __init__(self, lags:list[int]):
         self.lags = lags
@@ -53,14 +55,16 @@ class LagTransformer(BaseEstimator, TransformerMixin):
         return df[self.get_feature_names()]
         
     def get_feature_names(self) -> list[str]:
-        return [f"num_pickup_{i}d_ago" for i in self.lags] + [TS_INDEX]
+        return [f"num_pickup_{i}d_ago" for i in self.lags] + [ModelConfig.TS_INDEX]
     
     
 
 
 class MeanLagPredictor(BaseEstimator, RegressorMixin):
+    """Model that predicts the number of pickups for a given time period by averaging the number of pickups in the past.
+    """
     
-    def __init__(self, index_ts:str = TS_INDEX):
+    def __init__(self, index_ts:str = ModelConfig.TS_INDEX):
         self.ts_index = index_ts
         
     def fit(self, X:pl.DataFrame, y=None):
@@ -86,7 +90,7 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
 
 
 model = Pipeline([
-    ("lag_transformer", LagTransformer(lags=LAGS))
+    ("lag_transformer", LagTransformer(lags=ModelConfig.LAGS))
     , ("mean_predictor", MeanLagPredictor())
 ])
 
