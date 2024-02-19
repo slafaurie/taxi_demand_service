@@ -17,6 +17,7 @@ Build a service that predicts the demand of the next day.
 
 
 3. Model Development:
+
 - Feature Pipeline
 
 - Training Pipeline
@@ -26,3 +27,10 @@ Build a service that predicts the demand of the next day.
 
 4. Deployment and Monitoring:
 
+
+
+## TODO
+- Abstract daily aggregation function in pipeline.py into a database operation
+- Generalize to other locations, not only central park.
+- build function to save the model
+- build train pipeline -> from loading data to saving the model

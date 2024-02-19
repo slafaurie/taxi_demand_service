@@ -23,10 +23,11 @@ PROCESSED_DATA_DIR = DATA_DIR / "processed"
 
 TRANSFORMED_DATA_DIR = DATA_DIR / "transformed"
 
+MODEL_DIR = PARENT_DIR / "models"
 
 
 # Create directories if they don't exist
-for directory in [PARENT_DIR, DATA_DIR, RAW_DATA_DIR, PROCESSED_DATA_DIR, TRANSFORMED_DATA_DIR]:
+for directory in [PARENT_DIR, DATA_DIR, RAW_DATA_DIR, PROCESSED_DATA_DIR, TRANSFORMED_DATA_DIR, MODEL_DIR]:
     if not directory.exists():
         directory.mkdir()
         print(f"Created directory: {directory}")

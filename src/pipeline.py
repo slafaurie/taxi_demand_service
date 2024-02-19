@@ -1,19 +1,13 @@
 import polars as pl
-from sklearn.pipeline import Pipeline, FunctionTransformer
-from sklearn.base import BaseEstimator, TransformerMixin
-from src.config import TS_INDEX
+from sklearn.pipeline import Pipeline
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin
+from sklearn.pipeline import Pipeline
+
+
+from src.config import TS_INDEX, LAGS
 
 
 ##################################################################################### Feature Engineering
-
-"""
-TODO
-This should not be a python function. This should be abstracted to the database operation.
-I should be able to load the data already daily frequency. Modify the SQL query to allow for aggregation.
-"""
-def aggregate_to_daily(df: pl.DataFrame) -> pl.DataFrame:
-    return df.group_by_dynamic("pickup_datetime_hour", every="1d", by="pickup_location_id").agg(pl.col("num_pickup").sum())
-
 def get_time_lags(df: pl.DataFrame, n_lags: list[int]) -> pl.DataFrame:
     """
     
@@ -60,4 +54,37 @@ class LagTransformer(BaseEstimator, TransformerMixin):
         return [f"num_pickup_{i}d_ago" for i in self.lags] + [TS_INDEX]
     
     
+
+
+class MeanLagPredictor(BaseEstimator, RegressorMixin):
+    
+    def __init__(self, index_ts:str = TS_INDEX):
+        self.ts_index = index_ts
+        
+    def fit(self, X:pl.DataFrame, y=None):
+        return self
+    
+    def predict(self, X:pl.DataFrame) -> pl.DataFrame:
+        """The -1 is because we remove the
+        index column from the average calculation.
+
+        Args:
+            X (pl.DataFrame): _description_
+
+        Returns:
+            pl.DataFrame: _description_
+        """
+        return (
+            X
+            .select(
+                pl.col(self.ts_index)
+                , (pl.sum_horizontal(pl.exclude([self.ts_index])) / (X.shape[1] - 1)).alias("prediction")
+            )
+        )
+
+
+model = Pipeline([
+    ("lag_transformer", LagTransformer(lags=LAGS))
+    , ("mean_predictor", MeanLagPredictor())
+])
 

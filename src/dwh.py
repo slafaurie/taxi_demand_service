@@ -4,6 +4,7 @@ import duckdb
 from src.paths import DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN
 from src.logger import get_logger
 
+
 import polars as pl
 
 logger = get_logger(__name__)
@@ -97,6 +98,7 @@ def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:in
         connection.execute(statement)
     logger.info("Upserted %s into dwh.main.pickup_hourly", file)
     
+    
 def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime, to_date: datetime, pickup_locations: list[int] = []) -> pl.DataFrame:
     """
     Fetches pickup data from the data warehouse for a given date range and optional list of pickup locations.
@@ -127,13 +129,18 @@ def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime
     with connection:
         query = """
         SELECT 
-            *
+            CAST(pickup_datetime_hour AS DATE) as pickup_datetime_hour
+            , pickup_location_id 
+            , sum(num_pickup) AS num_pickup
         FROM 
             dwh.main.pickup_hourly
         WHERE 
             pickup_datetime_hour >= '{from_date}' 
             AND pickup_datetime_hour < '{to_date}'
             AND IF(LENGTH({pickup_locations}) > 0, list_contains({pickup_locations}, pickup_location_id), TRUE)
+        GROUP BY 1,2
+        ORDER BY 1,2
+            
         """.format(from_date=from_date, to_date=to_date, pickup_locations=pickup_locations) 
         
         df = connection.sql(query).pl()  
