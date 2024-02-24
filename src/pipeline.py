@@ -55,19 +55,31 @@ class LagTransformer(BaseEstimator, TransformerMixin):
         return df[self.get_feature_names()]
         
     def get_feature_names(self) -> list[str]:
-        return [f"num_pickup_{i}d_ago" for i in self.lags] + [ModelConfig.TS_INDEX]
+        """
+        This method ensures the inclusion of the target column alongside the generated features.
+        Retaining the target column is crucial for subsequent pipeline steps, as it is required for model training and evaluation.
+        """
+        return [f"num_pickup_{i}d_ago" for i in self.lags] + [ModelConfig.TS_INDEX, ModelConfig.TARGET]
     
     
-
 
 class MeanLagPredictor(BaseEstimator, RegressorMixin):
     """Model that predicts the number of pickups for a given time period by averaging the number of pickups in the past.
     """
     
-    def __init__(self, index_ts:str = ModelConfig.TS_INDEX):
-        self.ts_index = index_ts
+    def __init__(self, ts_index:str = ModelConfig.TS_INDEX):
+        self.ts_index = ts_index
+        self.residuals = None
         
-    def fit(self, X:pl.DataFrame, y=None):
+    def fit(self, X:pl.DataFrame, y:pl.DataFrame):
+        yhat_sample = self.predict(X)
+        self.residuals = (
+            X.join(yhat_sample, on=self.ts_index, how="inner")
+            .select([
+                pl.col(self.ts_index)
+                , (pl.col("num_pickup") - pl.col("prediction")).alias("residual")
+            ])
+        )   
         return self
     
     def predict(self, X:pl.DataFrame) -> pl.DataFrame:

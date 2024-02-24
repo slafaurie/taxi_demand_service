@@ -21,10 +21,11 @@ def make_prediction(reference_date:datetime, pickup_locations=ModelConfig.LOCATI
     """
 
     # + 1 guarantees we have enough data for the prediction of the reference date
+    # database operation is not inclusive of the to_date
     df = run_database_operation(
         operation="fetch_pickup_data",
-        from_date= reference_date - timedelta(days=max(ModelConfig.LAGS)+1), 
-        to_date=reference_date,
+        from_date= reference_date - timedelta(days=max(ModelConfig.LAGS)), 
+        to_date=reference_date + timedelta(days=1),
         pickup_locations=pickup_locations
     )
     

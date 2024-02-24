@@ -30,7 +30,10 @@ Build a service that predicts the demand of the next day.
 
 
 ## TODO
-- Abstract daily aggregation function in pipeline.py into a database operation
+- ~~Abstract daily aggregation function in pipeline.py into a database operation~~
 - Generalize to other locations, not only central park.
-- build function to save the model
-- build train pipeline -> from loading data to saving the model
+- ~~build function to save the model~~
+- ~~build train pipeline -> from loading data to saving the model~~
+- build how to schedule the inference pipeline to mimic real operations (hint, i must change the today_is var)
+- build model monitoring and frontend to visualize the predictions and the real values
+- replace model with proper timeseries model
