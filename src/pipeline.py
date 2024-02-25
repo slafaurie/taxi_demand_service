@@ -1,4 +1,5 @@
 import polars as pl
+import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin
 from sklearn.pipeline import Pipeline
@@ -72,17 +73,18 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         self.residuals = None
         
     def fit(self, X:pl.DataFrame, y:pl.DataFrame):
-        yhat_sample = self.predict(X)
+        yhat_sample = self.predict(X, False)
         self.residuals = (
             X.join(yhat_sample, on=self.ts_index, how="inner")
-            .select([
-                pl.col(self.ts_index)
-                , (pl.col("num_pickup") - pl.col("prediction")).alias("residual")
-            ])
+            .select(
+                (pl.col("num_pickup") - pl.col("prediction")).alias("residual")
+            )
+            ["residual"]
+            .to_list()
         )   
         return self
     
-    def predict(self, X:pl.DataFrame) -> pl.DataFrame:
+    def predict(self, X:pl.DataFrame, return_prediction_interval:bool=True, **kwargs) -> pl.DataFrame:
         """The -1 is because we remove the
         index column from the average calculation.
 
@@ -92,13 +94,49 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         Returns:
             pl.DataFrame: _description_
         """
-        return (
+        pred = (
             X
             .select(
                 pl.col(self.ts_index)
                 , (pl.sum_horizontal(pl.exclude([self.ts_index])) / (X.shape[1] - 1)).alias("prediction")
             )
         )
+        
+        if return_prediction_interval:
+            return self.get_prediction_intervals(pred, **kwargs)
+        
+        return pred
+    
+    def get_prediction_intervals(self, X:pl.DataFrame, B:int = 500, CIs:list[int] = [2.5, 97.5]) -> pl.DataFrame:
+        """
+        Generates prediction intervals for the predictions made by the model.
+
+        This method simulates B bootstrap samples of the residuals to generate prediction intervals for each prediction.
+        The prediction intervals are determined based on the specified confidence intervals (CIs).
+
+        Args:
+            X (pl.DataFrame): The input DataFrame containing the features and predictions.
+            B (int, optional): The number of bootstrap samples to generate. Defaults to 500.
+            CIs (list[int], optional): The confidence intervals for which to generate the lower and upper bounds. Defaults to [2.5, 97.5].
+
+        Returns:
+            pl.DataFrame: A DataFrame containing the original predictions along with the lower and upper bounds of the prediction intervals.
+        """
+        return (
+            X.select(
+            [pl.col(self.ts_index), pl.col("prediction")]
+            + [(pl.col("prediction") + np.random.choice(self.residuals)).alias(f"prediction_{x}") for x in range(B)]
+            )
+            .melt(id_vars=[self.ts_index, "prediction"])
+            .group_by([pl.col(self.ts_index), pl.col("prediction")])
+            .agg(
+                pl.col("value").quantile(CIs[0] / 100).alias("lower_bound")
+                , pl.col("value").quantile(CIs[1] / 100).alias("upper_bound")
+            )
+            .select([pl.col(self.ts_index), pl.col("prediction"), pl.col("lower_bound"), pl.col("upper_bound")])
+            .sort(self.ts_index)
+        )
+
 
 
 model = Pipeline([

@@ -36,4 +36,6 @@ Build a service that predicts the demand of the next day.
 - ~~build train pipeline -> from loading data to saving the model~~
 - build how to schedule the inference pipeline to mimic real operations (hint, i must change the today_is var)
 - build model monitoring and frontend to visualize the predictions and the real values
+- Add prediction intervals to the model
 - replace model with proper timeseries model
+

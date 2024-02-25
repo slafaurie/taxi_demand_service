@@ -7,7 +7,10 @@ from src.config import  TEST_DATA_FROM, TODAY_IS, TRAIN_DATA_FROM, ModelConfig
 from src.paths import MODEL_DIR
 from src.pipeline import model
 from src.dwh import run_database_operation
+from src.logger import get_logger
 
+
+logger = get_logger("train")
 
 def split_into_train_and_test(df:pl.DataFrame, cutoff_date:datetime = TEST_DATA_FROM):
     return (
@@ -24,6 +27,10 @@ def train_model():
         plot_predictions (bool, optional): If True, plot the predictions. Defaults to False.
     """
     
+    logger.info("Start Training")
+    logger.info("Load training data from database from %s to %s for locations %s", TRAIN_DATA_FROM, TODAY_IS, ModelConfig.LOCATIONS)
+
+    
     # Loading
     df = run_database_operation(
         operation="fetch_pickup_data",
@@ -33,6 +40,7 @@ def train_model():
     )
     train, test = split_into_train_and_test(df)
 
+    logger.info("Fit the model")
     # Fit
     model.fit(train)
     predictions = model.predict(train)
@@ -44,10 +52,12 @@ def train_model():
     train_mae = mean_absolute_error(train_with_predicitions["num_pickup"], train_with_predicitions["prediction"])
     test_mae = mean_absolute_error(test_with_predictions["num_pickup"], test_with_predictions["prediction"])
     
-    print(f"Train MAE: {train_mae:.2f}, Test MAE: {test_mae:.2f}")
+    logger.info("Model Evaluation: Train MAE: %s, Test MAE: %s", train_mae, test_mae)
     
     # persist
     joblib.dump(model, MODEL_DIR / "baseline_model.pkl")
+    
+    logger.info("Training finished")
 
 if __name__ == "__main__":
     train_model()
