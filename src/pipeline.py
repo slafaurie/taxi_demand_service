@@ -68,8 +68,9 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
     """Model that predicts the number of pickups for a given time period by averaging the number of pickups in the past.
     """
     
-    def __init__(self, ts_index:str = ModelConfig.TS_INDEX):
+    def __init__(self, ts_index:str = ModelConfig.TS_INDEX, random_state:int = 25):
         self.ts_index = ts_index
+        self.random_state = random_state
         self.residuals = None
         
     def fit(self, X:pl.DataFrame, y:pl.DataFrame):
@@ -122,10 +123,17 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         Returns:
             pl.DataFrame: A DataFrame containing the original predictions along with the lower and upper bounds of the prediction intervals.
         """
+        
+        rng = np.random.default_rng(seed=self.random_state)
+        bootstrap_errors = pl.DataFrame(
+            rng.choice(self.residuals, (X.shape[0], B))
+            , schema=[f"prediction_{x}" for x in range(B)]
+        )
         return (
-            X.select(
-            [pl.col(self.ts_index), pl.col("prediction")]
-            + [(pl.col("prediction") + np.random.choice(self.residuals)).alias(f"prediction_{x}") for x in range(B)]
+            X
+            .hstack(bootstrap_errors)
+            .with_columns(
+                [(pl.col("prediction") + pl.col(f"prediction_{x}")).alias(f"prediction_{x}") for x in range(B)]
             )
             .melt(id_vars=[self.ts_index, "prediction"])
             .group_by([pl.col(self.ts_index), pl.col("prediction")])

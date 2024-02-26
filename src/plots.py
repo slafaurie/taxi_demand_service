@@ -11,7 +11,14 @@ def is_numeric(series: pd.Series) -> bool:
     """
     return pd.api.types.is_numeric_dtype(series)
 
-def plot_ts(ts_data: pd.DataFrame, series:list[str] = ["num_pickup"], locations: list[int] | None = None, plot_from:datetime = None):
+def plot_ts(
+    ts_data: pd.DataFrame, 
+    series:list[str] = ["num_pickup"], 
+    locations: list[int] | None = None, 
+    plot_from:datetime = None, 
+    fill_between:list[str] = None,
+    target: str | None = None
+    ):
     """
     Plot time-series data
     """
@@ -37,6 +44,39 @@ def plot_ts(ts_data: pd.DataFrame, series:list[str] = ["num_pickup"], locations:
             name=serie
             )
         )
+    
+    if target:
+        fig.add_trace(
+        go.Scatter(
+            x = ts_data_to_plot["pickup_datetime_hour"]
+            , y = ts_data_to_plot[target]
+            , mode="markers"
+            , name=target
+        )
+    )
+        
+    if fill_between is not None:
+        fig.add_trace(
+            go.Scatter(
+                x = ts_data_to_plot["pickup_datetime_hour"]
+                , y = ts_data_to_plot[fill_between[1]]
+                , showlegend=False
+                , line=dict(width=0)
+                , name = "upper 95% CI"
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x = ts_data_to_plot["pickup_datetime_hour"]
+                , y = ts_data_to_plot[fill_between[0]]
+                , fill="tonexty"
+                , fillcolor='rgba(68, 68, 68, 0.3)'
+                , showlegend=False
+                , line=dict(width=0)
+                , name = "lower 95% CI"
+            )
+        )
+
 
     fig.show()
 
