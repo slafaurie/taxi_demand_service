@@ -9,7 +9,7 @@ from src.config import ModelConfig
 
 
 ##################################################################################### Feature Engineering
-def get_time_lags(df: pl.DataFrame, n_lags: list[int]) -> pl.DataFrame:
+def get_time_lags(df: pl.DataFrame, n_lags: list[int], drop_nulls:bool=True) -> pl.DataFrame:
     """
     
     Description
@@ -25,7 +25,8 @@ def get_time_lags(df: pl.DataFrame, n_lags: list[int]) -> pl.DataFrame:
     Returns:
     - pl.DataFrame: The original DataFrame with n_lags new columns added, each representing the number of pickups n hours ago.
     """
-    return (
+    
+    df = (
         df
         .with_columns([
             pl.col("num_pickup")
@@ -34,47 +35,56 @@ def get_time_lags(df: pl.DataFrame, n_lags: list[int]) -> pl.DataFrame:
             .over("pickup_location_id")
             .alias(f"num_pickup_{i}d_ago") for i in n_lags
         ])
-        .drop_nulls()
+        # .drop_nulls()
     )
+    
+    if drop_nulls:
+        return df.drop_nulls()
+    return df
+
 
 ##################################################################################### Scikit-learn transformers
 
 
-class LagTransformer(BaseEstimator, TransformerMixin): 
-    """A scikit-learn transformer that generates time-lagged features for the number of pickups.
-    It's essentially a wrapper around the get_time_lags function to be able to use it on a Scikit-learn
-    pipeline. 
-    """
-    def __init__(self, lags:list[int]):
-        self.lags = lags
+# class LagTransformer(BaseEstimator, TransformerMixin): 
+#     """A scikit-learn transformer that generates time-lagged features for the number of pickups.
+#     It's essentially a wrapper around the get_time_lags function to be able to use it on a Scikit-learn
+#     pipeline. 
+#     # TODO - Deprecate this class and integrate its functionality into the Baseline model
+#     """
+#     def __init__(self, lags:list[int]):
+#         self.lags = lags
     
-    def fit(self, X:pl.DataFrame, y=None):
-        return self
+#     def fit(self, X:pl.DataFrame, y=None):
+#         return self
     
-    def transform(self, X: pl.DataFrame):
-        df = get_time_lags(X, self.lags)
-        return df[self.get_feature_names()]
+#     def transform(self, X: pl.DataFrame):
+#         df = get_time_lags(X, self.lags)
+#         return df[self.get_feature_names()]
         
-    def get_feature_names(self) -> list[str]:
-        """
-        This method ensures the inclusion of the target column alongside the generated features.
-        Retaining the target column is crucial for subsequent pipeline steps, as it is required for model training and evaluation.
-        """
-        return [f"num_pickup_{i}d_ago" for i in self.lags] + [ModelConfig.TS_INDEX, ModelConfig.TARGET]
+#     def get_feature_names(self) -> list[str]:
+#         """
+#         This method ensures the inclusion of the target column alongside the generated features.
+#         Retaining the target column is crucial for subsequent pipeline steps, as it is required for model training and evaluation.
+#         """
+#         return [f"num_pickup_{i}d_ago" for i in self.lags] + [ModelConfig.TS_INDEX, ModelConfig.TARGET]
     
     
 
 class MeanLagPredictor(BaseEstimator, RegressorMixin):
     """Model that predicts the number of pickups for a given time period by averaging the number of pickups in the past.
+    # TODO - Add multi-step capacity by integrating lag predictor here
     """
     
-    def __init__(self, ts_index:str = ModelConfig.TS_INDEX, random_state:int = 25):
+    def __init__(self, ts_index:str = ModelConfig.TS_INDEX, lags: list[int] = ModelConfig.LAGS, random_state:int = 25):
         self.ts_index = ts_index
+        self.lags = lags
         self.random_state = random_state
         self.residuals = None
         
     def fit(self, X:pl.DataFrame, y:pl.DataFrame):
-        yhat_sample = self.predict(X, False)
+        
+        yhat_sample = self.predict(X, return_prediction_interval=False)
         self.residuals = (
             X.join(yhat_sample, on=self.ts_index, how="inner")
             .select(
@@ -85,7 +95,9 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         )   
         return self
     
-    def predict(self, X:pl.DataFrame, return_prediction_interval:bool=True, **kwargs) -> pl.DataFrame:
+    
+    
+    def predict(self, X:pl.DataFrame, return_prediction_interval:bool=True, calculate_lags:bool=True, **kwargs) -> pl.DataFrame:
         """The -1 is because we remove the
         index column from the average calculation.
 
@@ -95,6 +107,12 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         Returns:
             pl.DataFrame: _description_
         """
+        if calculate_lags:
+            X = (
+                X
+            .pipe(self.get_lagged_features, **kwargs)
+            )   
+            
         pred = (
             X
             .select(
@@ -108,7 +126,19 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         
         return pred
     
-    def get_prediction_intervals(self, X:pl.DataFrame, B:int = 500, CIs:list[int] = [2.5, 97.5]) -> pl.DataFrame:
+            
+    def get_lagged_features(self, X:pl.DataFrame, target:str = ModelConfig.TARGET, drop_nulls:bool=True, **kwargs) -> pl.DataFrame:
+        """
+        This method ensures the inclusion of the target column alongside the generated features.
+        Retaining the target column is crucial for subsequent pipeline steps, as it is required for model training and evaluation.
+        """
+        return (
+            X
+            .pipe(get_time_lags, self.lags, drop_nulls)
+            [[f"num_pickup_{i}d_ago" for i in self.lags] + [self.ts_index, target]]
+        )
+    
+    def get_prediction_intervals(self, pred:pl.DataFrame, B:int = 500, CIs:list[int] = [2.5, 97.5], **kwargs) -> pl.DataFrame:
         """
         Generates prediction intervals for the predictions made by the model.
 
@@ -126,11 +156,11 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         
         rng = np.random.default_rng(seed=self.random_state)
         bootstrap_errors = pl.DataFrame(
-            rng.choice(self.residuals, (X.shape[0], B))
+            rng.choice(self.residuals, (pred.shape[0], B))
             , schema=[f"prediction_{x}" for x in range(B)]
         )
         return (
-            X
+            pred
             .hstack(bootstrap_errors)
             .with_columns(
                 [(pl.col("prediction") + pl.col(f"prediction_{x}")).alias(f"prediction_{x}") for x in range(B)]
@@ -147,8 +177,13 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
 
 
 
+
+# model = Pipeline([
+#     ("lag_transformer", LagTransformer(lags=ModelConfig.LAGS))
+#     , ("mean_predictor", MeanLagPredictor())
+# ])
+
 model = Pipeline([
-    ("lag_transformer", LagTransformer(lags=ModelConfig.LAGS))
-    , ("mean_predictor", MeanLagPredictor())
+    ("mean_predictor", MeanLagPredictor())
 ])
 
