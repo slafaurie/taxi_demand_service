@@ -9,6 +9,9 @@ import polars as pl
 
 logger = get_logger(__name__)
 
+# TODO | 2024-12-02 | Save this into MotherDuck
+
+
 DATABASE_URL = DATA_DIR / "dwh.duckdb"
 
 ####### DDL

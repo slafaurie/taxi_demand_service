@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN, BASE_URL
 from src.logger import get_logger
-from src.dwh import run_database_operation
+from src.etl.dwh import run_database_operation
 
 logger = get_logger(__name__)
 
