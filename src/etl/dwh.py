@@ -1,27 +1,49 @@
 from pathlib import Path
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 import duckdb
-from src.paths import DATA_DIR, PROCESSED_DATA_DIR, FILE_PATTERN
-from src.logger import get_logger
-
-
 import polars as pl
+
+from src.paths import PROCESSED_DATA_DIR, FILE_PATTERN, PARENT_DIR
+from src.logger import get_logger
+from src.etl.constants import DATABASE_NAME
 
 logger = get_logger(__name__)
 
-DATABASE_URL = DATA_DIR / "dwh.duckdb"
+# TODO | 2024-12-02 | Save this into MotherDuck
+
+
 
 ####### DDL
 
-def generate_connection() -> duckdb.DuckDBPyConnection:
+def generate_connection():
     """Returns a connection to the DuckDB database.
 
     Returns:
         duckdb.DuckDBPyConnection: _description_
     """
-    return duckdb.connect(database=str(DATABASE_URL))
+    
+    db_mode = os.getenv('DB_MODE', 'LOCAL')
+    
+    logger.info("Running DB in mode %s", db_mode)
+
+    if db_mode == 'CLOUD':
+        db_token = os.getenv('MOTHERDUCK_TOKEN')
+        if db_token is None:
+            logger.error("DB Token is not found")
+            raise Exception("Token is not found")
+        database_url = "md:my_db"
+    else:
+        database_url = PARENT_DIR / "data" / f"{DATABASE_NAME}.duckdb"
+    # TODO | 2024-12-03 | Yield connection
+    # I'm creating a new connection everytime I call this, probably there's a better way
+    return duckdb.connect(database=str(database_url))
 
 def run_database_operation(operation:str, *args, **kwargs):
+    """ 
+    Interface to call different operations
+    """
     if operation not in ["upsert_pickup_data", "fetch_pickup_data"]:
         raise ValueError("Invalid operation name")
     
@@ -31,7 +53,7 @@ def run_database_operation(operation:str, *args, **kwargs):
         elif operation == "fetch_pickup_data":
             df = fetch_pickup_data(db, *args, **kwargs)
             return df
-
+    
 def create_pickup_table(connection: duckdb.DuckDBPyConnection):
     """
     Creates the pickup_hourly table in the data warehouse.
@@ -47,10 +69,16 @@ def create_pickup_table(connection: duckdb.DuckDBPyConnection):
     None
     """
     with connection:
-        connection.execute("DROP TABLE IF EXISTS dwh.main.pickup_hourly;")
+        # TODO | 2024-12-03 | Reduce duplication
+        # Try to find a better practice to avoid having to call again the env
+        # as this is called too when we create the connection
+        if os.getenv('DB_MODE', 'LOCAL') == 'CLOUD':
+            connection.execute(f"CREATE OR REPLACE DATABASE {DATABASE_NAME};")
+            
+        connection.execute(f"DROP TABLE IF EXISTS {DATABASE_NAME}.main.pickup_hourly;")
         connection.execute(
-            """
-            CREATE TABLE dwh.main.pickup_hourly (
+            f"""
+            CREATE TABLE {DATABASE_NAME}.main.pickup_hourly (
                 key STRING PRIMARY KEY
                 , pickup_datetime_hour TIMESTAMP
                 , pickup_location_id SMALLINT
@@ -58,7 +86,7 @@ def create_pickup_table(connection: duckdb.DuckDBPyConnection):
             );
             """
         )    
-    logger.info("Created dwh.main.pickup_hourly table")
+    logger.info("Created %s.main.pickup_hourly table", DATABASE_NAME)
 
 def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:int):
     """
@@ -80,7 +108,7 @@ def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:in
     file = str(PROCESSED_DATA_DIR / Path(FILE_PATTERN.format(year=year, month=month)))
     
     # pylint: disable=consider-using-f-string
-    statement = """
+    statement = f"""
         CREATE OR REPLACE TEMP TABLE stg_pickup_hourly AS
         SELECT * 
         FROM read_parquet('{file}');
@@ -91,7 +119,7 @@ def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:in
         DO UPDATE SET num_pickup = EXCLUDED.num_pickup;
         
         DROP TABLE stg_pickup_hourly;
-    """.format(file=file)
+    """
     # pylint: enable=consider-using-f-string
     
     with connection:
@@ -99,17 +127,9 @@ def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:in
     logger.info("Upserted %s into dwh.main.pickup_hourly", file)
     
     
-def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime, to_date: datetime, pickup_locations: list[int] = []) -> pl.DataFrame:
+def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime, to_date: datetime, pickup_locations: list[int] = None) -> pl.DataFrame:
     """
     Fetches pickup data from the data warehouse for a given date range and optional list of pickup locations.
-
-    This function queries the `dwh.main.pickup_hourly` table to retrieve all records between `from_date` and `to_date` for
-    the pickup locations specified in `pickup_locations`. 
-    
-    If `pickup_locations` is None, no location filter is applied, hence the IF statement in the query.
-    This approach will require to pass any additional filter explicitly in the query and have the query to handle
-    the case when no filter is passed. I consider this the best practice to split the logic between the query and the
-    function itself. If needed, the query can be tested outside.
 
     Parameters:
     - from_date (datetime): The start date and time for the query range.
@@ -120,6 +140,9 @@ def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime
     - pl.DataFrame: A Polars DataFrame containing the query results.
     """
     
+    if pickup_locations is None:
+        pickup_locations = []
+    
     if isinstance(pickup_locations, int):
         pickup_locations = [pickup_locations]
             
@@ -127,21 +150,20 @@ def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime
         raise ValueError("pickup_locations should be a list of integers")
     
     with connection:
-        query = """
+        query = f"""
         SELECT 
             CAST(pickup_datetime_hour AS DATE) as pickup_datetime_hour
             , pickup_location_id 
             , sum(num_pickup) AS num_pickup
         FROM 
-            dwh.main.pickup_hourly
+            {DATABASE_NAME}.main.pickup_hourly
         WHERE 
             pickup_datetime_hour >= '{from_date}' 
             AND pickup_datetime_hour < '{to_date}'
             AND IF(LENGTH({pickup_locations}) > 0, list_contains({pickup_locations}, pickup_location_id), TRUE)
         GROUP BY 1,2
         ORDER BY 1,2
-            
-        """.format(from_date=from_date, to_date=to_date, pickup_locations=pickup_locations) 
+        """
         
         df = connection.sql(query).pl()  
     return df
@@ -151,5 +173,5 @@ def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime
 if __name__ == "__main__":
     with generate_connection() as db:
         create_pickup_table(db)
-    print("Tables created successfully!")
+    logger.info("All Tables created successfully!")
 
