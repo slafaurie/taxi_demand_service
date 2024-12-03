@@ -1,6 +1,5 @@
 from pathlib import Path
-from datetime import datetime 
-from argparse import ArgumentParser
+from datetime import datetime, date
 
 import polars as pl
 import requests
@@ -8,9 +7,11 @@ from tqdm import tqdm
 
 
 from src.paths import RAW_DATA_DIR, PROCESSED_DATA_DIR
-from src.logger import get_logger
-from src.etl.dwh import run_database_operation
 from src.etl.constants import FILE_PATTERN, BASE_URL
+from src.etl.dwh import run_database_operation
+from src.etl.helpers import generate_list_of_months
+from src.logger import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -109,6 +110,7 @@ def delete_file(file: Path) -> None:
         logger.info(f"Deleted file: %s", file)
     except Exception as e:
         logger.error(f"Error deleting file %s: %s", file, e)
+
 
 def read_file(folder:Path, year:int, month:int) -> pl.DataFrame:
     """
@@ -221,11 +223,6 @@ def generate_surrogate_key(df: pl.DataFrame) -> pl.DataFrame:
 def file_etl(year:int, month:int) -> None:
     """
     Executes the ETL process for a single file corresponding to a given year and month.
-
-    This function encompasses the entire ETL (Extract, Transform, Load) process for taxi trip data of a specific year and month. 
-    It downloads the raw data file, validates and cleans it, aggregates it into timeseries data, generates a surrogate key, 
-    writes the processed data to a parquet file, upserts the data into a database, and finally cleans up the intermediate files.
-
     Parameters:
     - year (int): The year of the data file to process.
     - month (int): The month of the data file to process.
@@ -252,7 +249,7 @@ def file_etl(year:int, month:int) -> None:
     run_database_operation("upsert_pickup_data", year, month)
     delete_file(processed_file)
     
-def batch_etl(year:int, months: list[int] | None = None) -> None:
+def batch_etl(from_date:date, to_date:date) -> None:
     """
     Loads raw taxi trip data for a specified year and optional list of months, validates it, and saves the validated data.
 
@@ -269,24 +266,15 @@ def batch_etl(year:int, months: list[int] | None = None) -> None:
     None. The function saves the validated data into a processed data directory without returning any value.
     """
     
-    logger.info("Downloading data for year %s", year)
+    logger.info("Downloading data from %s to %s", from_date, to_date)
     
-    if months is None: 
-        months = range(1, 13)
-    if isinstance(months, int):
-        months = [months]
+    list_of_months = generate_list_of_months(from_date, to_date)
  
-    for month in tqdm(months):
+    for month in tqdm(list_of_months):
         try:
-            file_etl(year, month)
+            file_etl(month.year, month.month)
         except requests.exceptions.HTTPError as e:
-            logger.error("Error downloading data for year %s and month %s: %s", year, month, e)
+            logger.error("Error downloading data for %s: %s", month, e)
             continue
-    logger.info("Data for year %s has been downloaded and validated", year)
+    logger.info("Data from %s to %s has been downloaded and validated", from_date, to_date)
 
-if __name__ == "__main__":
-    parser = ArgumentParser(description="ETL process for NYC taxi trip data")
-    parser.add_argument("year", type=int, help="The year for which to download and validate the data")
-    parser.add_argument("--months", type=int, nargs="+", help="The months for which to download and validate the data")
-    args = parser.parse_args()
-    batch_etl(args.year, args.months)
