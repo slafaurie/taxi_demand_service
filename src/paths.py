@@ -1,14 +1,7 @@
 from pathlib import Path
+from dotenv import load_dotenv
 
-#### URLS
-
-
-FILE_PATTERN = "yellow_tripdata_{year}-{month:02d}.parquet"
-
-BASE_URL = f"https://d37ci6vzurychx.cloudfront.net/trip-data/{FILE_PATTERN}"
-
-
-#### Base URLS
+load_dotenv()
 
 
 ### FOLDERS 
