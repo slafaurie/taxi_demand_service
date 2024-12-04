@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 import duckdb
 import polars as pl
 
-from src.paths import PROCESSED_DATA_DIR, FILE_PATTERN, PARENT_DIR
+from src.paths import PROCESSED_DATA_DIR, PARENT_DIR
 from src.logger import get_logger
-from src.etl.constants import DATABASE_NAME
+from src.etl.constants import DATABASE_NAME, FILE_PATTERN
 
 logger = get_logger(__name__)
 
@@ -113,7 +113,7 @@ def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:in
         SELECT * 
         FROM read_parquet('{file}');
         
-        INSERT INTO dwh.main.pickup_hourly  
+        INSERT INTO {DATABASE_NAME}.main.pickup_hourly  
         SELECT * FROM stg_pickup_hourly
         ON CONFLICT(key)
         DO UPDATE SET num_pickup = EXCLUDED.num_pickup;
@@ -167,11 +167,4 @@ def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime
         
         df = connection.sql(query).pl()  
     return df
-
-
-
-if __name__ == "__main__":
-    with generate_connection() as db:
-        create_pickup_table(db)
-    logger.info("All Tables created successfully!")
 
