@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import polars as pl
 import argparse
 
-from src.config import ModelConfig
+from src.mean_lag_model.config import ModelConfig
 from src.paths import MODEL_DIR
 from src.dwh import run_database_operation
 

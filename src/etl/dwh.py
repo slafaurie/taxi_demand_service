@@ -1,7 +1,6 @@
 from pathlib import Path
 from datetime import datetime
 import os
-from dotenv import load_dotenv
 import duckdb
 import polars as pl
 
@@ -11,20 +10,23 @@ from src.etl.constants import DATABASE_NAME, FILE_PATTERN
 
 logger = get_logger(__name__)
 
-# TODO | 2024-12-02 | Save this into MotherDuck
-
 
 
 ####### DDL
 
 def generate_connection():
+    # should I pass the mode as default argument?
     """Returns a connection to the DuckDB database.
 
     Returns:
         duckdb.DuckDBPyConnection: _description_
     """
     
-    db_mode = os.getenv('DB_MODE', 'LOCAL')
+    # should it default to local mode if db_mode is passed?
+    db_mode = os.getenv('DB_MODE', None)
+    if not db_mode:
+        logger.info('DB_MODE env variable not found')
+        db_mode='LOCAL'
     
     logger.info("Running DB in mode %s", db_mode)
 
@@ -107,7 +109,6 @@ def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:in
     
     file = str(PROCESSED_DATA_DIR / Path(FILE_PATTERN.format(year=year, month=month)))
     
-    # pylint: disable=consider-using-f-string
     statement = f"""
         CREATE OR REPLACE TEMP TABLE stg_pickup_hourly AS
         SELECT * 
@@ -119,9 +120,7 @@ def upsert_pickup_data(connection: duckdb.DuckDBPyConnection, year:int, month:in
         DO UPDATE SET num_pickup = EXCLUDED.num_pickup;
         
         DROP TABLE stg_pickup_hourly;
-    """
-    # pylint: enable=consider-using-f-string
-    
+    """    
     with connection:
         connection.execute(statement)
     logger.info("Upserted %s into dwh.main.pickup_hourly", file)
@@ -152,9 +151,9 @@ def fetch_pickup_data(connection: duckdb.DuckDBPyConnection, from_date: datetime
     with connection:
         query = f"""
         SELECT 
-            CAST(pickup_datetime_hour AS DATE) as pickup_datetime_hour
-            , pickup_location_id 
-            , sum(num_pickup) AS num_pickup
+            CAST(pickup_datetime_hour AS DATETIME) AS pickup_datetime_hour
+            , CAST(pickup_location_id AS FLOAT) AS pickup_location_id
+            , CAST(sum(num_pickup) AS FLOAT) AS num_pickup
         FROM 
             {DATABASE_NAME}.main.pickup_hourly
         WHERE 
