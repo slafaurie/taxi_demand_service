@@ -58,7 +58,7 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
     https://nixtlaverse.nixtla.io/statsforecast/docs/tutorials/statisticalneuralmethods.html
     """ 
     
-    def __init__(self, lags: list[int], freq:str, unique_id:str='unique_id', ds:str='ds', target:str='y',  random_state:int = 25):
+    def __init__(self, lags: list[int], freq:str, unique_id:str='unique_id', ds:str='ds', target:str='y', model_name:str='mean_lag', random_state:int = 25):
         # TODO | 2024-12-11 | freq validation
         # Frequency should be one of Polars compatible string
         # listed here https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.group_by_dynamic.html
@@ -67,6 +67,7 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         self.unique_id=unique_id
         self.target=target
         self.freq = freq
+        self.model_name = model_name
         self.random_state = random_state
         self.residuals = None
         
@@ -208,5 +209,13 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
             )
         )
 
-
-
+def build_model_pipeline():
+    from src.mean_lag_model.config import model_params
+    model_name = model_params.get('model_name', '')
+    pipeline_name = 'Pipeline__'+model_name
+    
+    return (
+        Pipeline([
+            ( pipeline_name, MeanLagPredictor(**model_params))
+        ])
+    )
