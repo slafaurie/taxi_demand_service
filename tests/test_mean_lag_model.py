@@ -15,7 +15,7 @@ def test_get_time_lags_get_correct_lag_value():
     n_lags = [1, 2]
     
     # Execute function
-    result_df = get_time_lags(df, n_lags=n_lags)
+    result_df = get_time_lags(df, lags=n_lags)
     
     # Check specific lag values for series A
     a_series = result_df.filter(pl.col('unique_id') == 'A')
@@ -46,8 +46,8 @@ def test_get_time_lags_dimensions(data_size, unique_ids, n_lags):
     df = pl.DataFrame(data)
     
     # Execute function
-    result_df = get_time_lags(df, n_lags=n_lags)
-    result_with_nulls = get_time_lags(df, n_lags=n_lags, drop_nulls=False)
+    result_df = get_time_lags(df, lags=n_lags)
+    result_with_nulls = get_time_lags(df, lags=n_lags, drop_nulls=False)
     
     # Test 1: Check number of rows after removing nulls
     expected_rows = data_size - max(n_lags)
