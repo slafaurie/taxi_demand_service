@@ -53,7 +53,6 @@ def get_time_lags(df: pl.DataFrame,
 
 class MeanLagPredictor(BaseEstimator, RegressorMixin):
     """Model that predicts the number of pickups for a given time period by averaging the number of pickups in the past.
-    # TODO - Add multi-step capacity by integrating lag predictor here
     
     Column names are inspired by Nixtla StatsForecast 
     https://nixtlaverse.nixtla.io/statsforecast/docs/tutorials/statisticalneuralmethods.html
@@ -106,6 +105,9 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         
         Note that the function returns the input DF plus 1 more row (the forecast) and
         a new column (the in-sample prediction).
+        
+        # TODO | 2024-12-11 | Add predictions intervals
+
         """
         
         input_col = X.columns
