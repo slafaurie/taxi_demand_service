@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objects as go
 
+
+# TODO | 2024-12-11 | review plot
+
 def is_numeric(series: pd.Series) -> bool:
     """
     This function takes a pandas Series as an argument and returns True if the series data type is numeric (float or int).
