@@ -3,12 +3,27 @@ from datetime import datetime
 import os
 import duckdb
 import polars as pl
+from abc import ABC, abstractmethod
 
 from src.paths import PROCESSED_DATA_DIR, PARENT_DIR
 from src.logger import get_logger
 from src.etl.constants import DATABASE_NAME, FILE_PATTERN
 
 logger = get_logger(__name__)
+
+
+
+class NYCRepository(ABC):
+
+    
+    @abstractmethod
+    def upsert_data(self, data: pl.DataFrame):
+        pass
+    
+    @abstractmethod
+    def fetch_data(self, from_data: datetime, to_date: datetime, pickup_ids: list[int]) -> pl.DataFrame:
+        pass
+        
 
 
 
@@ -35,6 +50,8 @@ def generate_connection():
         if db_token is None:
             logger.error("DB Token is not found")
             raise Exception("Token is not found")
+        # TODO | 2025-02-01 | Avoid exposing DB URL
+        # this should be loaded from the ENV variable?
         database_url = "md:my_db"
     else:
         database_url = PARENT_DIR / "data" / f"{DATABASE_NAME}.duckdb"
