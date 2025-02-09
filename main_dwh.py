@@ -2,7 +2,7 @@ from datetime import date
 import argparse
 
 from src.etl.dwh import generate_connection, create_pickup_table
-from src.etl.data import batch_etl
+from src.etl.transform import batch_etl
 from src.logger import get_logger
 
 logger = get_logger('main_dwh')
