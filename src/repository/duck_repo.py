@@ -52,8 +52,12 @@ class DuckDBRepository(NYCTaxiRepository):
         """
         return duckdb.connect(database=self.db_url)
     
-    def _ddl(self):
+    def create_tables(self):
         """
+        
+        # TODO | 2025-02-09 | Relate this to the etl.models
+        # there should be an explicit dependency to the schema object in etl.models
+        # the models defines the data type and this functino should setup the database
         Creates the pickup_hourly table in the data warehouse.
 
         This function drops the existing dwh.main.pickup_hourly table if it exists and then creates a new one.
@@ -76,10 +80,6 @@ class DuckDBRepository(NYCTaxiRepository):
                 """
             )
             
-            # TODO | 2025-02-06 | Abstract this into a dict
-            # create a dictionary to hold the tables to create containing
-            # the layers to create the table on and the schema
-            # something similar to the SQLServer ingestion I have?
             conn.execute(
                 f"""
                 CREATE TABLE IF NOT EXISTS {DATABASE_NAME}.{SCHEMA}.pickup_hourly (

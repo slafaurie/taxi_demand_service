@@ -15,7 +15,7 @@ SCHEMA = 'main'
 class NYCTaxiRepository(ABC):
         
     @abstractmethod
-    def _ddl(self):
+    def create_tables(self):
         """This method setup creates the schema & tables within the repository
         and guarantee their existence.
         """

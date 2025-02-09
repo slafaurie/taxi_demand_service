@@ -21,7 +21,7 @@ class NYCPickupHourlySchema:
     
     @classmethod
     def _get_type_mapping(cls) -> dict:
-        return { x.get('column'):x.get('type') for x in cls.SCHEMA }
+        return { x.get('column'):x.get('type') for x in cls.SCHEMA }  
     
     @classmethod
     def enforce_schema(cls, df: pl.DataFrame) -> pl.DataFrame:
