@@ -65,12 +65,13 @@ class LocalRepository(NYCTaxiRepository):
     def upsert_pickup_data(self, data: pl.DataFrame):   
              
         if not self._pickup_table.exists():
-            logger.info('No existing data found')
             data.write_parquet(self._pickup_table)
         
         current_data = NYCPickupHourlySchema.enforce_schema(pl.read_parquet(self._pickup_table))
         current_data = self._deduplicate_pickup_data(new_data=data, current_data=current_data)
         current_data.write_parquet(self._pickup_table)
+        logger.info('data persisted')
+
     
     
     def fetch_pickup_data(self, from_date: datetime, to_date: datetime, pickup_locations: list[int] | None = None) -> pl.DataFrame:

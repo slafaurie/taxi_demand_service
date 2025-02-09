@@ -70,8 +70,10 @@ class DuckDBRepository(NYCTaxiRepository):
         Returns:
         None
         """
+        self._pickup_table = f"{DATABASE_NAME}.{SCHEMA}.pickup_hourly" # noqa
+
         with self._get_connection() as conn:
-            if os.getenv('DB_MODE', 'LOCAL') == 'CLOUD':
+            if self.db_mode == 'CLOUD':
                 conn.execute(f"CREATE DATABASE IF NOT EXISTS {DATABASE_NAME};")
             
             conn.execute(
@@ -82,7 +84,7 @@ class DuckDBRepository(NYCTaxiRepository):
             
             conn.execute(
                 f"""
-                CREATE TABLE IF NOT EXISTS {DATABASE_NAME}.{SCHEMA}.pickup_hourly (
+                CREATE TABLE IF NOT EXISTS {self._pickup_table} (
                     key STRING PRIMARY KEY
                     , pickup_datetime_hour TIMESTAMP
                     , pickup_location_id SMALLINT
@@ -90,12 +92,16 @@ class DuckDBRepository(NYCTaxiRepository):
                 );
                 """
             )    
-            logger.info("Created %s.%s.pickup_hourly table", DATABASE_NAME, SCHEMA)
+            logger.info("Created %s table", self._pickup_table)
             
     def upsert_pickup_data(self, data: pl.DataFrame):
         """
         Upserts data from a processed file into the pickup_hourly table.
-        None
+        Duckdb and Polars have a strong interoperability, polars DF
+        are part of the scope of a DuckDB connection therefore they can
+        be reference as SQL tables
+        
+        https://duckdb.org/docs/guides/python/polars.html
         """
         
         with self._get_connection() as conn:
@@ -103,7 +109,7 @@ class DuckDBRepository(NYCTaxiRepository):
             statement = f"""
                 CREATE OR REPLACE TEMP TABLE stg_pickup_hourly AS
                 SELECT * 
-                FROM {data};
+                FROM data;
                 
                 INSERT INTO {DATABASE_NAME}.{SCHEMA}.pickup_hourly  
                 SELECT * FROM stg_pickup_hourly
