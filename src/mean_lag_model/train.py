@@ -4,7 +4,7 @@ import polars as pl
 from sklearn.metrics import mean_absolute_error
 
 from src.mean_lag_model.config import  TEST_DATA_FROM, TODAY_IS, TRAIN_DATA_FROM, ModelConfig
-from src.paths import MODEL_DIR
+from src.common import MODEL_DIR
 from src.mean_lag_model.pipeline import model
 from src.dwh import run_database_operation
 from src.logger import get_logger

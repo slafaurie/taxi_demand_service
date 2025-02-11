@@ -9,7 +9,7 @@ import datetime
 from typing_extensions import Annotated
 
 from src.etl.pipeline import batch_etl
-from src.repository.local_repo import LocalRepository
+from src.adapters.base import initialize_repository
 
 app = typer.Typer()
 etl_app = typer.Typer()
@@ -28,10 +28,7 @@ def download_taxi_data(
     Download taxi data from source 
     """
     
-    if repo == 'local':
-        repo_obj = LocalRepository()
-    
-    repo_obj.create_tables()
+    repo_obj = initialize_repository(repo)
      
     batch_etl(
         repo = repo_obj,

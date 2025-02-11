@@ -1,9 +1,14 @@
+"""
+# TODO | 2025-02-09 | Add tests
+all repos should pass the same set of test for the public API.
+"""
+
 import polars as pl
 from polars.testing import assert_frame_equal
 import pytest
 from pathlib import Path
 from datetime import datetime,date
-from src.repository.local_repo import LocalRepository
+from src.adapters.duck_repo import DuckDBRepository
 from src.etl.models import NYCPickupHourlySchema
 
 @pytest.fixture
@@ -14,7 +19,7 @@ def temp_repo_path(tmp_path):
 
 @pytest.fixture
 def test_repo(temp_repo_path):
-    test_repo = LocalRepository(temp_repo_path)
+    test_repo = DuckDBRepository(db_mode='local')
     test_repo.create_tables()
     return test_repo
 

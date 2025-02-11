@@ -1,4 +1,4 @@
-from src.cli import app
+from src.interfaces.cli import app
 
 
 

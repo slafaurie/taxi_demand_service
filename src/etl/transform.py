@@ -2,7 +2,7 @@
 from datetime import datetime
 import polars as pl
 
-from src.logger import get_logger
+from src.common import get_logger
 from src.etl.models import NYCPickupHourlySchema
 
 

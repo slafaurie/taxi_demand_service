@@ -6,9 +6,8 @@ from pathlib import Path
 
 
 from src.etl.models import NYCPickupHourlySchema
-from src.repository.base import NYCTaxiRepository, DATABASE_NAME, SCHEMA
-from src.logger import get_logger
-from src.paths import DATA_DIR
+from src.adapters.base import NYCTaxiRepository, DATABASE_NAME, SCHEMA
+from src.common import DATA_DIR, get_logger
 
 
 
@@ -45,9 +44,6 @@ class LocalRepository(NYCTaxiRepository):
     
     @staticmethod
     def _deduplicate_pickup_data(new_data: pl.DataFrame, current_data:pl.DataFrame) -> pl.DataFrame:
-        
-        
-        
         return (
             pl.concat([
                 current_data.with_columns(priority=1)
