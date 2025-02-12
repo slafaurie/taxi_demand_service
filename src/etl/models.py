@@ -11,7 +11,7 @@ class NYCPickupHourlySchema:
     SCHEMA = [
         {"column": "key", "type": pl.String},
         {"column": "pickup_datetime_hour", "type": pl.Datetime},
-        {"column": "num_pickups", "type": pl.Int32},
+        {"column": "num_pickup", "type": pl.Int32},
         {"column": "pickup_location_id", "type": pl.Int32}
     ]
     

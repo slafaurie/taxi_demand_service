@@ -2,9 +2,11 @@ import os
 import duckdb 
 import polars as pl
 from datetime import datetime
+from pathlib import Path
 
 
 
+from src.etl.models import NYCPickupHourlySchema
 from src.adapters.base import NYCTaxiRepository, DATABASE_NAME, SCHEMA
 from src.common import DATA_DIR, get_logger
 
@@ -16,29 +18,33 @@ logger = get_logger(__name__)
 
 class DuckDBRepository(NYCTaxiRepository):
     
-    def __init__(self, db_mode: str = os.getenv('DB_MODE', 'LOCAL')):
-        self.db_mode = db_mode 
-        self.db_url = self._get_db_url()
+    def __init__(self, db_url: str | Path = None):
+        self.db_url = self._resolve_db_url(db_url)
+        self._check_connection()
         
-    def _get_db_url(self) -> str:
-        # should I pass the mode as default argument?
-        """Returns a connection to the DuckDB database.
-        We separate the db_url and connection methods because the
-        db_url method can be called at instatiation already to resolve
-        the DB URL.
-
-        Returns:
-            duckdb.DuckDBPyConnection: _description_
-        """
-        logger.info("Running DB in mode %s", self.db_mode)
-
-        if self.db_mode == 'CLOUD':
+        
+    def _resolve_db_url(self, db_url: str = None) -> str:
+        """Resolves the final DB URL based on input or environment defaults."""
+        if not db_url:
             db_url = os.getenv('DB_URL')
-            if db_url is None:
-                logger.error("DB Token is not found")
-                raise Exception("Token is not found")
-            return db_url
-        return str(DATA_DIR / f"{DATABASE_NAME}.duckdb")
+            if db_url:
+                return db_url
+            return str(DATA_DIR / f"{DATABASE_NAME}.duckdb")
+        
+        # For explicitly provided URLs
+        if isinstance(db_url, Path):
+            return str(db_url / f"{DATABASE_NAME}.duckdb")
+        return db_url if db_url.startswith('md') else str( Path(db_url) / f"{DATABASE_NAME}.duckdb")
+        
+    def _check_connection(self) -> None:
+        """Validates connection and creates database if needed."""
+        try:
+            with self._get_connection() as conn:
+                if self.db_url.startswith('md'):
+                    conn.execute(f"CREATE DATABASE IF NOT EXISTS {DATABASE_NAME}")
+        except Exception:
+            logger.exception('Error connecting to database')
+            
 
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
         """Returns a DB connection.
@@ -72,9 +78,6 @@ class DuckDBRepository(NYCTaxiRepository):
         self._pickup_table = f"{DATABASE_NAME}.{SCHEMA}.pickup_hourly" # noqa
 
         with self._get_connection() as conn:
-            if self.db_mode == 'CLOUD':
-                conn.execute(f"CREATE DATABASE IF NOT EXISTS {DATABASE_NAME};")
-            
             conn.execute(
                 f"""
                 CREATE SCHEMA IF NOT EXISTS {DATABASE_NAME}.{SCHEMA};
@@ -86,8 +89,8 @@ class DuckDBRepository(NYCTaxiRepository):
                 CREATE TABLE IF NOT EXISTS {self._pickup_table} (
                     key STRING PRIMARY KEY
                     , pickup_datetime_hour TIMESTAMP
-                    , pickup_location_id SMALLINT
                     , num_pickup SMALLINT
+                    , pickup_location_id SMALLINT
                 );
                 """
             )    
@@ -135,6 +138,9 @@ class DuckDBRepository(NYCTaxiRepository):
         - pl.DataFrame: A Polars DataFrame containing the query results.
         """
         
+        if from_date > to_date:
+            raise ValueError(f"{from_date} can't be higher than {to_date}")
+        
         if pickup_locations is None:
             pickup_locations = []
         
@@ -144,18 +150,17 @@ class DuckDBRepository(NYCTaxiRepository):
         with self._get_connection() as conn:
             query = f"""
             SELECT 
-                CAST(pickup_datetime_hour AS DATETIME) AS pickup_datetime_hour
-                , CAST(pickup_location_id AS FLOAT) AS pickup_location_id
-                , CAST(sum(num_pickup) AS FLOAT) AS num_pickup
+                key
+                , pickup_datetime_hour
+                , pickup_location_id
+                , num_pickup
             FROM 
                 {DATABASE_NAME}.{SCHEMA}.pickup_hourly
             WHERE 
                 pickup_datetime_hour >= '{from_date}' 
                 AND pickup_datetime_hour < '{to_date}'
                 AND IF(LENGTH({pickup_locations}) > 0, list_contains({pickup_locations}, pickup_location_id), TRUE)
-            GROUP BY 1,2
-            ORDER BY 1,2
             """
             df = conn.sql(query).pl()  
-        return df
+        return NYCPickupHourlySchema.enforce_schema(df)
 

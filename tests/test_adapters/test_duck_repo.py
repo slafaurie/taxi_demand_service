@@ -1,9 +1,14 @@
+"""
+# TODO | 2025-02-09 | Add tests
+all repos should pass the same set of test for the public API.
+"""
+
 import polars as pl
 from polars.testing import assert_frame_equal
 import pytest
 from pathlib import Path
 from datetime import datetime,date
-from src.adapters.local_repo import LocalRepository
+from src.adapters.duck_repo import DuckDBRepository
 from src.etl.models import NYCPickupHourlySchema
 
 @pytest.fixture
@@ -14,66 +19,16 @@ def temp_repo_path(tmp_path):
 
 @pytest.fixture
 def test_repo(temp_repo_path):
-    test_repo = LocalRepository(temp_repo_path)
+    test_repo = DuckDBRepository(str(temp_repo_path))
     test_repo.create_tables()
     return test_repo
-
-def test_deduplicate_pickup_data(test_repo):
-    # Create initial data
-    initial_data = {
-        "key": ["A_2023_01", "B_2023_01", "C_2023_01"],
-        "pickup_datetime_hour": [
-            datetime(2023, 1, 1, 10, 0, 0),
-            datetime(2023, 1, 1, 10, 0, 0),
-            datetime(2023, 1, 1, 10, 0, 0)
-        ],
-        "num_pickups": [10, 20, 30],
-        "pickup_location_id": [1, 2, 3]
-    }
-    
-    # Create new data with some overlapping keys but different values
-    new_data = {
-        "key": ["B_2023_01", "C_2023_01", "D_2023_01"],
-        "pickup_datetime_hour": [
-            datetime(2023, 1, 1, 10, 0, 0),
-            datetime(2023, 1, 1, 10, 0, 0),
-            datetime(2023, 1, 1, 10, 0, 0)
-        ],
-        "num_pickups": [25, 35, 40],  # Changed values for B and C
-        "pickup_location_id": [2, 3, 4]
-    }
-    
-    # Expected result after deduplication
-    expected_data = {
-        "key": ["A_2023_01", "B_2023_01", "C_2023_01", "D_2023_01"],
-        "pickup_datetime_hour": [
-            datetime(2023, 1, 1, 10, 0, 0),
-            datetime(2023, 1, 1, 10, 0, 0),
-            datetime(2023, 1, 1, 10, 0, 0),
-            datetime(2023, 1, 1, 10, 0, 0)
-        ],
-        "num_pickups": [10, 25, 35, 40],
-        "pickup_location_id": [1, 2, 3, 4]
-    }
-    
-    # Convert to DataFrames and enforce schema
-    initial_df = NYCPickupHourlySchema.enforce_schema(pl.DataFrame(initial_data))
-    new_df = NYCPickupHourlySchema.enforce_schema(pl.DataFrame(new_data))
-    expected_df = NYCPickupHourlySchema.enforce_schema(pl.DataFrame(expected_data))
-    
-    # Execute deduplication
-    result_df = test_repo._deduplicate_pickup_data(new_df, initial_df)  # noqa
-    
-    # Assert the result matches expected DataFrame
-    assert_frame_equal(result_df, expected_df)
-
 
 def test_upsert_pickup_data_empty_initial(test_repo):
     # Test upserting when no initial data exists
     new_data = {
         "key": ["A_2023_01"],
         "pickup_datetime_hour": [datetime(2023, 1, 1, 10, 0, 0)],
-        "num_pickups": [10],
+        "num_pickup": [10],
         "pickup_location_id": [1]
     }
     
@@ -83,7 +38,10 @@ def test_upsert_pickup_data_empty_initial(test_repo):
     test_repo.upsert_pickup_data(new_df)
     
     # Read and verify result
-    result_df = pl.read_parquet(test_repo._pickup_table)  # noqa
+    with test_repo._get_connection() as conn:
+        result_df = conn.execute(f"SELECT * FROM {test_repo._pickup_table}").pl()  # noqa
+        result_df = NYCPickupHourlySchema.enforce_schema(result_df)
+        
     assert_frame_equal(result_df, new_df) 
 
 def test_fetch_pickup_data(test_repo):
@@ -96,7 +54,7 @@ def test_fetch_pickup_data(test_repo):
             datetime(2023, 1, 2, 10, 0, 0),
             datetime(2023, 1, 2, 11, 0, 0)
         ],
-        "num_pickups": [10, 20, 30, 40],
+        "num_pickup": [10, 20, 30, 40],
         "pickup_location_id": [1, 2, 1, 2]
     }
     
@@ -111,7 +69,7 @@ def test_fetch_pickup_data(test_repo):
             datetime(2023, 1, 1, 10, 0, 0),
             datetime(2023, 1, 2, 10, 0, 0)
         ],
-        "num_pickups": [10, 30],
+        "num_pickup": [10, 30],
         "pickup_location_id": [1, 1]
     })
     expected_df = NYCPickupHourlySchema.enforce_schema(expected_df)
@@ -130,7 +88,7 @@ def test_fetch_pickup_data(test_repo):
             datetime(2023, 1, 1, 10, 0, 0),
             datetime(2023, 1, 1, 11, 0, 0)
         ],
-        "num_pickups": [10, 20],
+        "num_pickup": [10, 20],
         "pickup_location_id": [1, 2]
     })
     expected_df = NYCPickupHourlySchema.enforce_schema(expected_df)
@@ -145,7 +103,7 @@ def test_fetch_pickup_data(test_repo):
     expected_df = pl.DataFrame({
         "key": ["B_2023_01"],
         "pickup_datetime_hour": [datetime(2023, 1, 1, 11, 0, 0)],
-        "num_pickups": [20],
+        "num_pickup": [20],
         "pickup_location_id": [2]
     })
     expected_df = NYCPickupHourlySchema.enforce_schema(expected_df)
