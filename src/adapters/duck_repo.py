@@ -22,19 +22,20 @@ class DuckDBRepository(NYCTaxiRepository):
         self.db_url = self._resolve_db_url(db_url)
         self._check_connection()
         
-        
     def _resolve_db_url(self, db_url: str = None) -> str:
         """Resolves the final DB URL based on input or environment defaults."""
         if not db_url:
             db_url = os.getenv('DB_URL')
             if db_url:
+                logger.info('DB_URL found')
+                # logger.info('%s', db_url)
                 return db_url
             return str(DATA_DIR / f"{DATABASE_NAME}.duckdb")
         
         # For explicitly provided URLs
         if isinstance(db_url, Path):
             return str(db_url / f"{DATABASE_NAME}.duckdb")
-        return db_url if db_url.startswith('md') else str( Path(db_url) / f"{DATABASE_NAME}.duckdb")
+        db_url if db_url.startswith('md') else str( Path(db_url) / f"{DATABASE_NAME}.duckdb")
         
     def _check_connection(self) -> None:
         """Validates connection and creates database if needed."""

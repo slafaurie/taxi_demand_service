@@ -22,7 +22,7 @@ app.add_typer(etl_app, name='etl')
 def download_taxi_data(
     from_date: str,
     to_date: str,
-    repo: Annotated[str, typer.Option()] = "local"
+    repo: Annotated[str, typer.Option()] = "duckdb"
 ):
     """ 
     Download taxi data from source 

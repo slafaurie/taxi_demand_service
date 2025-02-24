@@ -6,8 +6,7 @@ all repos should pass the same set of test for the public API.
 import polars as pl
 from polars.testing import assert_frame_equal
 import pytest
-from pathlib import Path
-from datetime import datetime,date
+from datetime import datetime
 from src.adapters.duck_repo import DuckDBRepository
 from src.etl.models import NYCPickupHourlySchema
 
@@ -41,7 +40,6 @@ def test_upsert_pickup_data_empty_initial(test_repo):
     with test_repo._get_connection() as conn:
         result_df = conn.execute(f"SELECT * FROM {test_repo._pickup_table}").pl()  # noqa
         result_df = NYCPickupHourlySchema.enforce_schema(result_df)
-        
     assert_frame_equal(result_df, new_df) 
 
 def test_fetch_pickup_data(test_repo):
