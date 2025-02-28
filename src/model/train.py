@@ -1,13 +1,15 @@
 from datetime import datetime 
-import joblib
+# import joblib
 import polars as pl 
-from sklearn.metrics import mean_absolute_error
+from mlforecast import MLForecast
 
-from src.model.config import  TEST_DATA_FROM, TODAY_IS, TRAIN_DATA_FROM, ModelConfig
-from src.common import MODEL_DIR
-from src.model.pipeline import model
-from src.dwh import run_database_operation
-from src.logger import get_logger
+# from sklearn.metrics import mean_absolute_error
+
+# from src.model.config import  TEST_DATA_FROM, TODAY_IS, TRAIN_DATA_FROM, ModelConfig
+# from src.common import MODEL_DIR
+# from src.model.pipeline import model
+# from src.dwh import run_database_operation
+from src.common import get_logger
 
 
 logger = get_logger("train")
@@ -79,8 +81,105 @@ def split_train_test(
             ( fold_data.filter(~pl.col('is_test')), fold_data.filter(pl.col('is_test')))
         )
     return folds
-    
 
+
+def rolling_window_forecast(
+    model: MLForecast,
+    h: int,
+    df:pl.DataFrame, 
+    step_size: int | None  = None,
+    ts_col: str = 'ds',
+    unique_id: str = 'unique_id',
+    y: str = 'y'
+) -> pl.DataFrame:
+    """
+    Performs rolling window forecast evaluation.
+
+    For each cutoff point in the test set, generates h-step ahead forecasts
+    and combines them with actual values for evaluation.
+
+    Args:
+        model: The MLForecast model to use for predictions
+        h: Forecast horizon (number of steps ahead to predict)
+        df: Test dataset to evaluate on
+        step_size: Size of the step between forecast origins. Defaults to h if None.
+
+    Returns:
+        DataFrame containing actual values and predictions for each cutoff point
+    """
+    max_lag = max(model.ts.lags)
+
+    first_prediction = (
+        df.select(pl.col(ts_col)+ pl.duration(days=max_lag))
+        .item(0,0)
+    )
+    last_series = df.select(pl.col(ts_col).max()).item(0,0)
+    
+    step_size = step_size if step_size else h
+    step_size = f"{step_size}{model.freq[-1]}"
+
+
+    cutoffs = (
+        pl.DataFrame(
+        pl.datetime_range(
+            start=first_prediction,
+            end=last_series,
+            interval=step_size,
+            eager=True,
+            closed='left'
+            )
+        )
+        .select(
+            pl.col('literal').alias('cutoff')
+        )
+        .to_series()
+        .to_list()
+    )
+
+
+    preds = []
+    for cutoff_i in cutoffs:
+        pred_i = (
+            model
+            .predict(h=h, new_df=df.filter(pl.col(ts_col).le(cutoff_i)))
+            .with_columns(
+                cutoff=pl.lit(cutoff_i)
+            )
+        )
+        preds.append(pred_i)
+        
+    return (
+        df
+        .join(pl.concat(preds), on=[unique_id, ts_col], how='inner')
+        .select([unique_id, ts_col, 'cutoff', y,] + list(model.models.keys()))
+    )
+    
+def evaluate_prediction(df: pl.DataFrame):
+    return (
+        df 
+        .with_columns(
+            error=pl.col('y_pred') - pl.col('y'),
+            horizon = pl.col('ds').sub(pl.col('cutoff'))
+        )
+        .group_by(['unique_id', 'horizon'])
+        .agg(
+            bias=pl.col('error').mean(),
+            mae = pl.col('error').abs().mean(),
+            mae_per = pl.col('error').abs().sum().truediv(pl.col('y').sum())
+        )
+        .with_columns(
+            score = pl.col('mae').add(pl.col('bias').abs())
+        )
+        .group_by('horizon')
+        .agg(
+            pl.col('bias').mean()
+            , pl.col('mae').mean()
+            , pl.col('score').mean()
+        )
+        .to_dicts()
+    )
+    
+    
 # def train_model():
     
 #     """Train the model and save it to disk

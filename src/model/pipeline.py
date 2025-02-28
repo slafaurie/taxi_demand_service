@@ -210,7 +210,7 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
         )
 
 def build_model_pipeline():
-    from src.mean_lag_model.config import model_params
+    from src.model.config import model_params
     model_name = model_params.get('model_name', '')
     pipeline_name = 'Pipeline__'+model_name
     
