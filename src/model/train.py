@@ -1,15 +1,11 @@
 from datetime import datetime 
-# import joblib
 import polars as pl 
+
 from mlforecast import MLForecast
 
-# from sklearn.metrics import mean_absolute_error
-
-# from src.model.config import  TEST_DATA_FROM, TODAY_IS, TRAIN_DATA_FROM, ModelConfig
-# from src.common import MODEL_DIR
-# from src.model.pipeline import model
-# from src.dwh import run_database_operation
 from src.common import get_logger
+from src.model.pipeline import build_model
+from src.adapters.base import  NYCTaxiRepository
 
 
 logger = get_logger("train")
@@ -18,7 +14,7 @@ def split_train_test(
         df:pl.DataFrame,
         test_from: datetime,
         every:str,
-        ts_col:str
+        ts_col:str='ds'
     ):
     
     """ 
@@ -63,7 +59,7 @@ def split_train_test(
         .to_dicts()
     )
     
-    print('Numbers of folds:', len(fold_info))
+    logger.info('Numbers of folds: %s', len(fold_info))
 
     folds = []
     for fold_i in fold_info:
@@ -81,7 +77,6 @@ def split_train_test(
             ( fold_data.filter(~pl.col('is_test')), fold_data.filter(pl.col('is_test')))
         )
     return folds
-
 
 def rolling_window_forecast(
     model: MLForecast,
@@ -179,47 +174,89 @@ def evaluate_prediction(df: pl.DataFrame):
         .to_dicts()
     )
     
+def process_result_into_keyval(eval_result:dict):
+    """ 
+    Utility function to transform the evaluation metrics
+    by adding the horizon as part of the key value
+    """
+    horizon = eval_result['horizon'].days
+    metrics_no_horizon = [x for x in eval_result.keys() if x != 'horizon']
+    return {f"{x}_{horizon}":eval_result.get(x) for x in metrics_no_horizon}
+      
+def train_model(
+    repo: NYCTaxiRepository,
+    train_data_from:datetime,
+    train_data_to:datetime,
+    test_data_from:datetime,
+    pickup_locations: list[int],
+    max_horizon:int,
+    ):
     
-# def train_model():
-    
-#     """Train the model and save it to disk
+    """Train the model and save it to disk
 
-#     Args:
-#         plot_predictions (bool, optional): If True, plot the predictions. Defaults to False.
-#     """
-    
-#     logger.info("Start Training")
-#     logger.info("Load training data from database from %s to %s for locations %s", TRAIN_DATA_FROM, TODAY_IS, ModelConfig.LOCATIONS)
+    Args:
+        plot_predictions (bool, optional): If True, plot the predictions. Defaults to False.
+    """
+    logger.info("Start Training")
+    logger.info("Load training data from database from %s to %s", train_data_from, train_data_to)
 
     
-#     # Loading
-#     df = run_database_operation(
-#         operation="fetch_pickup_data",
-#         from_date=TRAIN_DATA_FROM,
-#         to_date=TODAY_IS,
-#         pickup_locations=ModelConfig.LOCATIONS
-#     )
-#     train, test = split_into_train_and_test(df)
+    # Loading
+    df = repo.fetch_pickup_data(
+        from_date=train_data_from,
+        to_date=train_data_to,
+        pickup_locations=pickup_locations
+    )
+    
+    df = (
+        df
+        .sort(by='pickup_datetime_hour')
+        .group_by_dynamic('pickup_datetime_hour', every='1d', group_by='pickup_location_id')
+        .agg(
+            pl.col('num_pickup').sum()
+        )
+        .rename(
+            {
+                "pickup_location_id":'unique_id',
+                "pickup_datetime_hour":"ds",
+                "num_pickup":"y"
+            }
+        )
+    )
+    
+    folds = split_train_test(df, test_from=test_data_from, every='3mo')
+    
+    logger.info("Fit the model")
+    model = build_model()
+    
+    # Fit
+    for i, (train, test) in  enumerate(folds, start=1):
+                
+        logger.info('training fold %s', i)
+        
+        model.fit(train)
+        
+        test_result = rolling_window_forecast(
+            model=model,
+            h=max_horizon,
+            df=test,
+        )
 
-#     logger.info("Fit the model")
-#     # Fit
-#     model.fit(train)
-#     predictions = model.predict(train)
-#     test_predictions = model.predict(test)
+        logger.info('Evaluating predictions')
+   
+        eval = evaluate_prediction(test_result)
+        # eval_transform = [ process_result_into_keyval(x) for x in eval]
+        
+        logger.info(eval)
+        
     
-#     # Evaluation
-#     train_with_predicitions = train.join(predictions, on=ModelConfig.TS_INDEX, how="inner")
-#     test_with_predictions = test.join(test_predictions, on=ModelConfig.TS_INDEX, how="inner")
-#     train_mae = mean_absolute_error(train_with_predicitions["num_pickup"], train_with_predicitions["prediction"])
-#     test_mae = mean_absolute_error(test_with_predictions["num_pickup"], test_with_predictions["prediction"])
+    # persist
+    # joblib.dump(model, MODEL_DIR / "baseline_model.pkl")
     
-#     logger.info("Model Evaluation: Train MAE: %s, Test MAE: %s", train_mae, test_mae)
-    
-#     # persist
-#     joblib.dump(model, MODEL_DIR / "baseline_model.pkl")
-    
-#     logger.info("Training finished")
+    logger.info("Training finished")
 
-# if __name__ == "__main__":
-#     train_model()
+if __name__ == "__main__":
+    from src.adapters.base import initialize_repository
+    repo = initialize_repository()
+    train_model(repo)
 

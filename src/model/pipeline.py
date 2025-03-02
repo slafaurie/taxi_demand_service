@@ -3,6 +3,9 @@ import polars.selectors as cs
 import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.linear_model import LinearRegression
+from mlforecast import MLForecast
+
 
 
 ##################################################################################### Feature Engineering
@@ -209,13 +212,13 @@ class MeanLagPredictor(BaseEstimator, RegressorMixin):
             )
         )
 
-def build_model_pipeline():
-    from src.model.config import model_params
-    model_name = model_params.get('model_name', '')
-    pipeline_name = 'Pipeline__'+model_name
+def build_model() -> MLForecast:
     
-    return (
-        Pipeline([
-            ( pipeline_name, MeanLagPredictor(**model_params))
-        ])
+    # TODO | 2025-02-28 | abstract params
+    return MLForecast(
+        models={
+            "y_pred": LinearRegression()
+        },
+        freq='1d',
+        lags=[1,7,14]
     )
