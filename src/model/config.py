@@ -1,17 +1,16 @@
 from datetime import datetime, timedelta
 
 
-# variables are in days
-TEST_DATA_SIZE = 90
-TEST_DATA_FROM = timedelta(days=TEST_DATA_SIZE)
+# training default options
 TRAIN_DATA_FROM =  datetime(2022,1,1)
+TRAIN_DATA_TO = datetime.today()
+MAX_HORIZON = 7 # we'll make predictions 7 days in advance
+TEST_DATA_FROM = TRAIN_DATA_TO - timedelta(days=365) # we leave one year open
+CROSS_VALIDATION_FREQUENCY = '3mo' # to create the time-based split, we create folds of 3 month each
+PICKUPS_LOCATION = [43]
 
 
 # model config
-
-model_params = {
-    "lags": [1,7,14,28],
-    "target": "num_pickup",
-    "ds": "pickup_datetime_hour",
-    "unique_id": "pickup_location_id"
+MODEL_PARAMS = {
+    "lags": [1,7,14,28]
 }

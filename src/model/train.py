@@ -190,6 +190,7 @@ def train_model(
     test_data_from:datetime,
     pickup_locations: list[int],
     max_horizon:int,
+    cross_validation_split_frequency:str
     ):
     
     """Train the model and save it to disk
@@ -208,6 +209,7 @@ def train_model(
         pickup_locations=pickup_locations
     )
     
+    # TODO | 2025-03-02 | This should be part of the model or a function "feature engineering"
     df = (
         df
         .sort(by='pickup_datetime_hour')
@@ -224,7 +226,7 @@ def train_model(
         )
     )
     
-    folds = split_train_test(df, test_from=test_data_from, every='3mo')
+    folds = split_train_test(df, test_from=test_data_from, every=cross_validation_split_frequency)
     
     logger.info("Fit the model")
     model = build_model()
@@ -233,6 +235,9 @@ def train_model(
     for i, (train, test) in  enumerate(folds, start=1):
                 
         logger.info('training fold %s', i)
+        logger.info('train shape %s', train.shape[0])
+        logger.info('test shape %s', test.shape[0])
+
         
         model.fit(train)
         
@@ -244,10 +249,10 @@ def train_model(
 
         logger.info('Evaluating predictions')
    
-        eval = evaluate_prediction(test_result)
+        fold_results = evaluate_prediction(test_result)
         # eval_transform = [ process_result_into_keyval(x) for x in eval]
         
-        logger.info(eval)
+        logger.info(fold_results)
         
     
     # persist
@@ -255,8 +260,8 @@ def train_model(
     
     logger.info("Training finished")
 
-if __name__ == "__main__":
-    from src.adapters.base import initialize_repository
-    repo = initialize_repository()
-    train_model(repo)
+# if __name__ == "__main__":
+#     from src.adapters.base import initialize_repository
+#     repo = initialize_repository()
+#     train_model(repo)
 

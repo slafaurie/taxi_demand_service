@@ -60,5 +60,4 @@ def initialize_repository(repo_type: str = "duckdb", **kwargs) -> NYCTaxiReposit
         case "local":
             from src.adapters.local_repo import LocalRepository
             repo = LocalRepository(**kwargs)
-    repo.create_tables()
     return repo

@@ -6,6 +6,8 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.linear_model import LinearRegression
 from mlforecast import MLForecast
 
+from src.model.config import MODEL_PARAMS
+
 
 
 ##################################################################################### Feature Engineering
@@ -220,5 +222,5 @@ def build_model() -> MLForecast:
             "y_pred": LinearRegression()
         },
         freq='1d',
-        lags=[1,7,14]
+        lags=MODEL_PARAMS.get('lags')
     )
