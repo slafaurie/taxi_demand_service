@@ -1,6 +1,6 @@
 import polars as pl
 import pytest
-from src.mean_lag_model.pipeline import get_time_lags
+from src.model.pipeline import get_time_lags
 
 def test_get_time_lags_get_correct_lag_value():
     # Create sample data

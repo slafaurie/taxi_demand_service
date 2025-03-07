@@ -3,9 +3,11 @@ from datetime import date
 from tqdm import tqdm
 
 
-from src.logger import get_logger
+from src.common import get_logger
+from src.adapters.base import NYCTaxiRepository
+
+
 from src.etl.transform import transform_raw_data
-from src.repository.base import NYCTaxiRepository
 from src.etl.helpers import generate_list_of_months
 
 

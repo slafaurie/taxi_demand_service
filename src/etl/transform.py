@@ -2,7 +2,7 @@
 from datetime import datetime
 import polars as pl
 
-from src.logger import get_logger
+from src.common import get_logger
 from src.etl.models import NYCPickupHourlySchema
 
 
@@ -127,7 +127,7 @@ def aggregate_pickup_into_timeseries_data(df: pl.DataFrame, year: int, month: in
             pl.col("pickup_location_id")
         ])
         .agg(
-            pl.col("pickup_location_id").count().alias("num_pickups")
+            pl.col("pickup_location_id").count().alias("num_pickup")
         )
     )
     
@@ -139,7 +139,7 @@ def aggregate_pickup_into_timeseries_data(df: pl.DataFrame, year: int, month: in
             .join(hourly_pickups.select(pl.col("pickup_location_id").unique()), how="cross")
             .join(hourly_pickups, on=["pickup_datetime_hour", "pickup_location_id"], how="left")
             .with_columns(
-                pl.col("num_pickups").fill_null(pl.lit(0))
+                pl.col("num_pickup").fill_null(pl.lit(0))
             )
     )
     
@@ -147,13 +147,13 @@ def add_surrogate_key(df: pl.DataFrame) -> pl.DataFrame:
     """
     Generates a surrogate key for each record in the DataFrame by concatenating the pickup_datetime_hour and pickup_location_id.
 
-    This function takes a DataFrame and adds a new column named 'key' which is a string concatenation of 'pickup_datetime_hour' and 'pickup_location_id', separated by a hyphen. It also ensures that 'pickup_location_id' and 'num_pickups' are cast to Int16 for consistency.
+    This function takes a DataFrame and adds a new column named 'key' which is a string concatenation of 'pickup_datetime_hour' and 'pickup_location_id', separated by a hyphen. It also ensures that 'pickup_location_id' and 'num_pickup' are cast to Int16 for consistency.
 
     Parameters:
     - df (pl.DataFrame): The DataFrame to process.
 
     Returns:
-    - pl.DataFrame: The original DataFrame with an additional 'key' column and casted 'pickup_location_id' and 'num_pickups' columns.
+    - pl.DataFrame: The original DataFrame with an additional 'key' column and casted 'pickup_location_id' and 'num_pickup' columns.
     """
     return df.with_columns([
         pl.concat_str(pl.col("pickup_datetime_hour"), pl.lit("-"), pl.col("pickup_location_id")).alias("key")
